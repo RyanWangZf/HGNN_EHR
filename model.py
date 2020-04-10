@@ -245,7 +245,7 @@ class HGNN(torch.nn.Module):
             if self.use_gpu:
                 data[k] = torch.LongTensor(data[k]).cuda()
             else:
-                ata[k] = torch.LongTensor(data[k])
+                data[k] = torch.LongTensor(data[k])
 
 
         return data

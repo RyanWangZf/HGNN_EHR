@@ -11,7 +11,7 @@ from collections import defaultdict
 from dataset import ehr
 from model import HGNN
 from utils import DSD_sampler
-from utils import now
+from utils import now, parse_kwargs, EarlyStopping
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -24,7 +24,7 @@ def collate_fn(batch):
     return data, np.array(label)
 
 def train(**kwargs):
-    
+
     setup_seed(2020)
     
     model_param = {
@@ -37,9 +37,12 @@ def train(**kwargs):
         "weight_decay":1e-4,
         "batch_size":128,
         "num_epoch":10,
+        "early_stop":5,
         "use_gpu":True,
     }
     
+    model_param = parse_kwargs(model_param, kwargs)
+
     use_gpu = model_param["use_gpu"]
 
     # load training data
@@ -54,7 +57,9 @@ def train(**kwargs):
 
 
     # init model
-    gnn = HGNN(train_data, **model_param)    
+    gnn = HGNN(train_data, **model_param)
+    early_stopper = EarlyStopping(patience=model_param["early_stop"], larger_better=True)
+
     if use_gpu:
         gnn.cuda()
     
@@ -91,6 +96,21 @@ def train(**kwargs):
         metric_result, eval_log, eval_result  = evaluate(gnn, val_data_loader, dsd_sampler, [3,5])
         print("{} Epoch {}/{}: [Val] {}".format(now(),epoch+1, model_param["num_epoch"], eval_log))
 
+        early_stopper(metric_result["ndcg_5"], gnn)
+
+        if early_stopper.early_stop:
+            print("[Early Stop] {} Epoch {}/{}: {}".format(now(),epoch+1, model_param["num_epoch"], eval_log))
+            break
+
+    # eval on test set
+    # load test data
+    test_data = ehr.EHR("dataset/EHR","test")
+    test_data_loader = DataLoader(test_data, 
+        model_param["batch_size"], shuffle=False, num_workers=0, collate_fn=collate_fn)
+
+    test_metric, test_log, test_result =  evaluate(gnn, test_data_loader, dsd_sampler, top_k_list=[3,5])
+    print("[Test] {}: {}".format(now(), test_log))
+    print("Training Done.")
 
 
 def create_bpr_loss(pred, pred_neg):

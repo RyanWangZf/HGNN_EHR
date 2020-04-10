@@ -6,6 +6,8 @@ import os
 from collections import defaultdict
 import time
 
+import torch
+
 class DSD_sampler:
     """Given targeted array of diseases,
     sampling their neighborhood based D-S-D path.
@@ -69,7 +71,7 @@ class DSD_sampler:
 
 class EarlyStopping:
     """Early stops the training if validation loss doesn't improve after a given patience."""
-    def __init__(self, patience=7, verbose=False, delta=0):
+    def __init__(self, patience=7, verbose=False, delta=0, larger_better=True):
         """
         Args:
             patience (int): How long to wait after last time validation loss improved.
@@ -79,22 +81,37 @@ class EarlyStopping:
             delta (float): Minimum change in the monitored quantity to qualify as an improvement.
                             Default: 0
         """
+
         self.patience = patience
         self.verbose = verbose
         self.counter = 0
         self.best_score = None
         self.early_stop = False
-        self.val_loss_min = np.Inf
+
+        self.val_metric_max = 0
+        self.val_metric_min = np.Inf
+
         self.delta = delta
         self.best_model = None
 
-    def __call__(self, val_loss, model):
+        "the metric is better if it is larger, e.g., auc."
+        "if set False, it is smaller it is better, e.g. loss."
+        self.larger_better = larger_better
 
-        score = -val_loss
+    def __call__(self, val_metric, model):
+        if self.larger_better:
+            self.call_larger_better(val_metric, model)
+        else:
+            self.call_smaller_better(val_metric,model)
+
+
+    def call_larger_better(self, val_metric, model):
+        score = val_metric
 
         if self.best_score is None:
             self.best_score = score
-            self.save_checkpoint(val_loss, model)
+            self.save_checkpoint(score, model)
+
         elif score < self.best_score + self.delta:
             self.counter += 1
             if self.verbose:
@@ -104,13 +121,39 @@ class EarlyStopping:
                 self.load_checkpoint(model)
         else:
             self.best_score = score
-            self.save_checkpoint(val_loss, model)
+            self.save_checkpoint(score, model)
             self.counter = 0
 
-    def save_checkpoint(self, val_loss, model):
+    def call_smaller_better(self, val_metric, model):
+        score = val_metric
+
+        if self.best_score is None:
+            self.best_score = score
+            self.save_checkpoint(score, model)
+        elif score > self.best_score + self.delta:
+            self.counter += 1
+            if self.verbose:
+                print("EarlyStopping counter: {} out of {}".format(self.counter, self.patience))
+            if self.counter >= self.patience:
+                self.early_stop = True
+                self.load_checkpoint(model)
+        else:
+            self.best_score = score
+            self.save_checkpoint(score, model)
+            self.counter = 0
+        pass
+
+
+    def save_checkpoint(self, val_metric, model):
         '''Saves model when validation loss decrease.'''
+        if not os.path.exists("ckpt"):
+            os.mkdir("ckpt")
+
         torch.save(model.state_dict(), './ckpt/checkpoint.pt')
-        self.val_loss_min = val_loss
+        if self.larger_better:
+            self.val_metric_max = val_metric        
+        else:
+            self.val_metric_min = val_metric
 
     def load_checkpoint(self, model):
         ckpt = torch.load("./ckpt/checkpoint.pt")
@@ -119,5 +162,31 @@ class EarlyStopping:
 
 def now():
     return str(time.strftime('%Y-%m-%d %H:%M:%S'))
+
+def parse_kwargs(param, kwargs):
+
+    for k in kwargs.keys():
+        if k in ["symp_embedding_dim", "dise_embedding_dim", "layer_size_dsd", "layer_size_usu","embedding_dim"]:
+            """Cope with embedding dimensions.
+            """
+            dim = kwargs[k]
+            param["symp_embedding_dim"] = dim
+            param["symp_embedding_dim"] = dim
+            param["layer_size_dsd"] = [dim] * 2
+            param["layer_size_usu"] = [dim] * 3
+
+        else:
+            param[k] = kwargs[k]
+
+    print('*************************************************')
+    print("User Config:")
+
+    # print configurations
+    for k in param.keys():
+        print("{} => {}".format(k, param[k]))
+
+    print('*************************************************')
+
+    return param
 
 
