@@ -5,69 +5,7 @@ import pdb
 import os
 from collections import defaultdict
 import time
-
 import torch
-
-class DSD_sampler:
-    """Given targeted array of diseases,
-    sampling their neighborhood based D-S-D path.
-    """
-    def __init__(self, prefix):
-        self.prefix = prefix
-        # load maps
-        self.dise2symp = np.load(os.path.join(prefix,"dise2symp.npy"),allow_pickle=True).item()
-        self.symp2dise = np.load(os.path.join(prefix,"symp2dise.npy"),allow_pickle=True).item()
-        self.num_dise = len(self.dise2symp.keys())
-        self.num_symp = len(self.symp2dise.keys())
-
-    def sampling(self, label, num_DSD_1_hop, num_DSD_2_hop):
-        """Neighbor sampling for D-S-D metapath.
-        """
-        dise_ar = label
-
-        data_dict = defaultdict(list)
-
-        for l in range(len(dise_ar)):
-            # ---------------
-            # for DSD path
-            dise = dise_ar[l]
-            dsd_1_hop_nb = self.dise2symp[str(dise)]
-            dsd_1_hop_nb = self.random_select(dsd_1_hop_nb, num_DSD_1_hop)
-            dsd_1_hop_nb = self.fill_zero(dsd_1_hop_nb, num_DSD_1_hop)
-
-            data_dict["dsd_1"].append(dsd_1_hop_nb)
-
-            dsd_2_hop_nb_list = []
-
-            for i in range(len(dsd_1_hop_nb)):
-                symp = dsd_1_hop_nb[i]
-                dsd_2_hop_nb = self.symp2dise.get(symp)
-                if dsd_2_hop_nb is None:
-                    dsd_2_hop_nb = []
-                else:
-                    dsd_2_hop_nb = self.random_select(dsd_2_hop_nb, num_DSD_2_hop)
-                
-                dsd_2_hop_nb = self.fill_zero(dsd_2_hop_nb, num_DSD_2_hop)
-
-                data_dict["dsd_2_{}".format(i)].append(dsd_2_hop_nb)
-            # ---------------
-        
-        for k in data_dict.keys():
-            data_dict[k] = np.array(data_dict[k]).astype(int)
-
-        return data_dict
-
-    def fill_zero(self, ar, target_num):
-        ar_len = len(ar)
-        assert target_num >= ar_len
-        if ar_len < target_num:
-            ar = np.r_[ar, ["0"]*(target_num - ar_len)]
-        return ar
-
-    def random_select(self, ar, target_num):
-        all_idx = np.arange(len(ar))
-        np.random.shuffle(all_idx)
-        return ar[all_idx[:target_num]]
 
 class EarlyStopping:
     """Early stops the training if validation loss doesn't improve after a given patience."""
@@ -163,6 +101,25 @@ class EarlyStopping:
 def now():
     return str(time.strftime('%Y-%m-%d %H:%M:%S'))
 
+def setup_seed(seed):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    torch.backends.cudnn.deterministic = True
+
+def collate_fn(batch):
+    data, label = zip(*batch)
+    return data, np.array(label)
+
+
+def parse_data_model(data_model):
+    param = {}
+    param["num_symp"] = data_model.num_symp
+    param["num_dise"] = data_model.num_dise
+    for k,v in data_model.metapath_param.items():
+        param[k] = v
+    return param
+
 def parse_kwargs(param, kwargs):
 
     for k in kwargs.keys():
@@ -190,3 +147,59 @@ def parse_kwargs(param, kwargs):
     return param
 
 
+def load_ckpt(path, model):
+    ckpt = torch.load(path)
+    model.load_state_dict(ckpt)
+    print("Load Checkpoint from", path)
+    return
+
+
+def read_dise2id(prefix="./dataset/EHR"):
+    filename = os.path.join(prefix,"id2disease.txt")
+    f = open(filename, "r", encoding="utf-8")
+    data = f.readlines()
+    disease2id = {}
+
+    for i,line in enumerate(data):
+        id_d, ds = line.split("\t")
+        ds_list = ds.split("#")
+        for d in ds_list:
+            disease2id[d.strip()] = id_d
+
+    f.close()
+
+    # build id2disease
+    id2disease = {}
+    for k,v in disease2id.items():
+        id2disease[v] = k
+
+    return disease2id, id2disease
+
+
+def parse_rank(pred_rank, id2dise):
+    pred_list = []
+    if len(pred_rank.shape) == 1:
+        pred_rank = np.expand_dims(pred_rank,1)
+        num_dim = 1
+    else:
+        num_dim = pred_rank.shape[1]
+
+    for i in range(len(pred_rank)):
+        this_rank = pred_rank[i]
+        if num_dim > 1:
+            pred_list.append([id2dise[str(x)] for x in this_rank])
+        else:
+            pred_list.append(id2dise[str(this_rank[0])])
+
+    pred_list = np.array(pred_list)
+
+    return pred_list
+
+
+def parse_query(query):
+    """Given inputs queries, parse them to be
+    the format accepted by our GNN.
+    """
+    # TODO
+
+    return

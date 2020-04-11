@@ -9,41 +9,18 @@ import torch.nn.functional as F
 from collections import defaultdict
 
 from dataset import ehr
-from model import HGNN
-from utils import DSD_sampler
-from utils import now, parse_kwargs, EarlyStopping
+from model import HGNN, DSD_sampler, USU_sampler
+from utils import now, parse_kwargs, parse_data_model, EarlyStopping
+from utils import setup_seed, collate_fn
 
-def setup_seed(seed):
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
-    torch.backends.cudnn.deterministic = True
-
-def collate_fn(batch):
-    data, label = zip(*batch)
-    return data, np.array(label)
+from config import default_config
 
 def train(**kwargs):
 
     setup_seed(2020)
-    
-    model_param = {
-        "symp_embedding_dim": 16,
-        "dise_embedding_dim": 16,
-        "layer_size_dsd": [16,16],
-        "layer_size_usu": [16,16,16],
-        "dropout_ratio": 0.1,
-        "lr":1e-3,
-        "weight_decay":1e-4,
-        "batch_size":128,
-        "num_epoch":10,
-        "early_stop":5,
-        "use_gpu":True,
-    }
-    
-    model_param = parse_kwargs(model_param, kwargs)
 
-    use_gpu = model_param["use_gpu"]
+    model_param = default_config()
+    model_param = parse_kwargs(model_param, kwargs)
 
     # load training data
     train_data = ehr.EHR("dataset/EHR","train")
@@ -55,9 +32,13 @@ def train(**kwargs):
     val_data_loader = DataLoader(val_data, 
         model_param["batch_size"], shuffle=False, num_workers=0, collate_fn=collate_fn)
 
+    # use data model to update model_param
+    data_model_param = parse_data_model(train_data)
+    model_param.update(data_model_param)
+    use_gpu = model_param["use_gpu"]
 
     # init model
-    gnn = HGNN(train_data, **model_param)
+    gnn = HGNN(**model_param)
     early_stopper = EarlyStopping(patience=model_param["early_stop"], larger_better=True)
 
     if use_gpu:
@@ -132,25 +113,7 @@ def evaluate(model, data_loader, dsd_sampler, top_k_list=[3,5]):
     result_map = defaultdict(list)
 
     # forward to obtain the disease embeddings
-    dise_label = np.arange(1,model.num_dise+1)
-
-    dise_data = dsd_sampler.sampling(dise_label, 
-    model.num_dsd_1_hop,
-    model.num_dsd_2_hop)
-
-    for k in dise_data.keys():
-        if model.use_gpu:
-            dise_data[k] = torch.LongTensor(dise_data[k]).cuda()
-        else:
-            dise_data[k] = torch.LongTensor(dise_data[k])
-            
-    if model.use_gpu:
-        dise_label = torch.LongTensor(dise_label).cuda()
-    else:
-        dise_label = torch.LongTensor(dise_label)
-
-    with torch.no_grad():
-        emb_dise = model.forward_dsd(dise_data, dise_label)
+    emb_dise = model.gen_all_dise_emb(dsd_sampler)
 
     # let's compute Recall@K and NDCG@K;
     for idx, (feat,dise) in enumerate(data_loader):

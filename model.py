@@ -4,17 +4,16 @@ import numpy as np
 from collections import defaultdict
 
 import pdb
+import os
 
 class HGNN(torch.nn.Module):
-    def __init__(self, data_model, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         super(HGNN, self).__init__()
-        self.num_symp = data_model.num_symp
-        self.num_dise = data_model.num_dise
-        self.metapath_param = data_model.metapath_param
-        self._parse_metapath_param(self.metapath_param)
-        self.use_gpu = kwargs["use_gpu"]
+        self.num_symp = kwargs["num_symp"]
+        self.num_dise = kwargs["num_dise"]
 
-        self.data_model = data_model
+        self._parse_metapath_param(kwargs)
+        self.use_gpu = kwargs["use_gpu"]
 
         layer_size_dsd = kwargs["layer_size_dsd"]
         layer_size_usu = kwargs["layer_size_usu"]
@@ -230,6 +229,54 @@ class HGNN(torch.nn.Module):
         emb_u_last = self.act_fn(m_u_s)
         return emb_u_last
 
+    def gen_all_dise_emb(self, dsd_sampler):
+        """Generate alternative embeddings for all 27 diseases, 
+        namely emb_dise.
+        """
+        self.eval()
+        dise_label = np.arange(1, self.num_dise+1)
+        dise_data = dsd_sampler.sampling(dise_label, 
+            self.num_dsd_1_hop,
+            self.num_dsd_2_hop)
+
+        for k in dise_data.keys():
+            if self.use_gpu:
+                dise_data[k] = torch.LongTensor(dise_data[k]).cuda()
+            else:
+                dise_data[k] = torch.LongTensor(dise_data[k])
+                
+        if self.use_gpu:
+            dise_label = torch.LongTensor(dise_label).cuda()
+        else:
+            dise_label = torch.LongTensor(dise_label)
+
+        with torch.no_grad():
+            emb_dise = self.forward_dsd(dise_data, dise_label)
+
+        return emb_dise
+
+    def rank_query(self, user_query, emb_dise, usu_sampler, top_k=3):
+        self.eval()
+
+        user_data = usu_sampler(user_query, self.num_usu_1_hop,
+            self.num_usu_2_hop, self.num_usu_3_hop)
+
+        for k in user_data.keys():
+            if self.use_gpu:
+                user_data[k] = torch.LongTensor(user_data[k]).cuda()
+            else:
+                user_data[k] = torch.LongTensor(user_data[k])
+
+        with torch.no_grad():
+            emb_user = self.forward_usu(user_data)
+
+        pred_score = emb_user.matmul(emb_dise.T)
+
+        # ranking
+        pred_rank_top_k = torch.argsort(-pred_score,1)[:,:top_k] + 1
+
+        return pred_rank_top_k.detach().cpu().numpy()
+
     def _array2dict(self, feat):
         """Transform a batch of tuples to a
         dict contains batch of longtensor.
@@ -275,13 +322,150 @@ class HGNN(torch.nn.Module):
 
         return neg_dise
 
-    def _parse_metapath_param(self, metapath_param):
-        # TODO
-        self.num_dsd_1_hop = self.metapath_param["num_dsd_1_hop"]
-        self.num_dsd_2_hop = self.metapath_param["num_dsd_2_hop"] 
+    def _parse_metapath_param(self, param):
+        # for DSD
+        self.num_dsd_1_hop = param["num_dsd_1_hop"]
+        self.num_dsd_2_hop = param["num_dsd_2_hop"] 
 
         # for USU
-        self.num_usu_1_hop = self.metapath_param["num_usu_1_hop"] 
-        self.num_usu_2_hop = self.metapath_param["num_usu_2_hop"]  
-        self.num_usu_3_hop = self.metapath_param["num_usu_3_hop"]  
+        self.num_usu_1_hop = param["num_usu_1_hop"] 
+        self.num_usu_2_hop = param["num_usu_2_hop"]  
+        self.num_usu_3_hop = param["num_usu_3_hop"]  
         return
+
+
+class USU_sampler:
+    def __init__(self, prefix):
+        self.prefix = prefix
+        # load maps
+        self.symp2user = np.load(os.path.join(prefix,"symp2user.npy"),allow_pickle=True).item()
+        self.user2symp = np.load(os.path.join(prefix,"user2symp.npy"),allow_pickle=True).item()
+
+    def __call__(self, symps, num_USU_1_hop, num_USU_2_hop, num_USU_3_hop):
+        return self.sampling(symps, num_USU_1_hop, num_USU_2_hop, num_USU_3_hop)
+
+    def sampling(self, symps, num_USU_1_hop, num_USU_2_hop, num_USU_3_hop):
+        """Neighbor sampling for U-S-U metapath.
+        Inputs an array of symptoms, outputs the USU neighbors
+        for generating user embeddings.
+        """
+
+        data_dict = defaultdict(list)
+
+        for s in range(len(symps)):
+            symp_list = symps[s]
+
+            # ---------------
+            # for USU path
+            usu_1_hop_nb = symp_list.astype(str)
+            usu_1_hop_nb = self.random_select(usu_1_hop_nb, num_USU_1_hop)
+            usu_1_hop_nb = self.fill_zero(usu_1_hop_nb, num_USU_1_hop)
+            data_dict["usu_1"].append(usu_1_hop_nb)
+
+            # user's symptoms is usu_1 !
+            data_dict["symp"].append(usu_1_hop_nb)
+
+            for i in range(len(usu_1_hop_nb)):
+                symp = usu_1_hop_nb[i]
+                usu_2_hop_nb = self.symp2user.get(symp)
+                if usu_2_hop_nb is None:
+                    usu_2_hop_nb = []
+                else:
+                    usu_2_hop_nb = self.random_select(usu_2_hop_nb, num_USU_2_hop)
+                
+                usu_2_hop_nb = self.fill_zero(usu_2_hop_nb, num_USU_2_hop)
+                data_dict["usu_2_{}".format(i)].append(usu_2_hop_nb)
+
+                for j in range(len(usu_2_hop_nb)):
+                    uid = usu_2_hop_nb[j]
+                    usu_3_hop_nb = self.user2symp.get(uid)
+                    if usu_3_hop_nb is None:
+                        usu_3_hop_nb = []
+                    else:
+                        usu_3_hop_nb = self.random_select(usu_3_hop_nb, num_USU_3_hop)
+
+                    usu_3_hop_nb = self.fill_zero(usu_3_hop_nb, num_USU_3_hop)
+                    data_dict["usu_3_{}".format(i*num_USU_2_hop+j)].append(usu_3_hop_nb)
+
+        for k in data_dict.keys():
+            data_dict[k] = np.array(data_dict[k]).astype(int)
+
+        return data_dict
+
+    def fill_zero(self, ar, target_num):
+        ar_len = len(ar)
+        assert target_num >= ar_len
+        if ar_len < target_num:
+            ar = np.r_[ar, ["0"]*(target_num - ar_len)]
+        return ar
+
+    def random_select(self, ar, target_num):
+        all_idx = np.arange(len(ar))
+        np.random.shuffle(all_idx)
+        return ar[all_idx[:target_num]]
+
+
+
+class DSD_sampler:
+    """Given targeted array of diseases,
+    sampling their neighborhood based D-S-D path.
+    """
+    def __init__(self, prefix):
+        self.prefix = prefix
+        # load maps
+        self.dise2symp = np.load(os.path.join(prefix,"dise2symp.npy"),allow_pickle=True).item()
+        self.symp2dise = np.load(os.path.join(prefix,"symp2dise.npy"),allow_pickle=True).item()
+        self.num_dise = len(self.dise2symp.keys())
+        self.num_symp = len(self.symp2dise.keys())
+
+    def __call__(self, label, num_DSD_1_hop, num_DSD_2_hop):
+        return self.sampling(label, num_DSD_1_hop, num_DSD_2_hop)
+
+    def sampling(self, label, num_DSD_1_hop, num_DSD_2_hop):
+        """Neighbor sampling for D-S-D metapath.
+        """
+        dise_ar = label
+
+        data_dict = defaultdict(list)
+
+        for l in range(len(dise_ar)):
+            # ---------------
+            # for DSD path
+            dise = dise_ar[l]
+            dsd_1_hop_nb = self.dise2symp[str(dise)]
+            dsd_1_hop_nb = self.random_select(dsd_1_hop_nb, num_DSD_1_hop)
+            dsd_1_hop_nb = self.fill_zero(dsd_1_hop_nb, num_DSD_1_hop)
+
+            data_dict["dsd_1"].append(dsd_1_hop_nb)
+
+            dsd_2_hop_nb_list = []
+
+            for i in range(len(dsd_1_hop_nb)):
+                symp = dsd_1_hop_nb[i]
+                dsd_2_hop_nb = self.symp2dise.get(symp)
+                if dsd_2_hop_nb is None:
+                    dsd_2_hop_nb = []
+                else:
+                    dsd_2_hop_nb = self.random_select(dsd_2_hop_nb, num_DSD_2_hop)
+                
+                dsd_2_hop_nb = self.fill_zero(dsd_2_hop_nb, num_DSD_2_hop)
+
+                data_dict["dsd_2_{}".format(i)].append(dsd_2_hop_nb)
+            # ---------------
+        
+        for k in data_dict.keys():
+            data_dict[k] = np.array(data_dict[k]).astype(int)
+
+        return data_dict
+
+    def fill_zero(self, ar, target_num):
+        ar_len = len(ar)
+        assert target_num >= ar_len
+        if ar_len < target_num:
+            ar = np.r_[ar, ["0"]*(target_num - ar_len)]
+        return ar
+
+    def random_select(self, ar, target_num):
+        all_idx = np.arange(len(ar))
+        np.random.shuffle(all_idx)
+        return ar[all_idx[:target_num]]
