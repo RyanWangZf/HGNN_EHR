@@ -46,8 +46,10 @@ def train(**kwargs):
     
     print("Model Inited.")
 
-    optimizer = torch.optim.Adam(gnn.parameters(),
-        lr=model_param["lr"],weight_decay=model_param["weight_decay"])
+    # optimizer = torch.optim.Adam(gnn.parameters(),lr=model_param["lr"],weight_decay=model_param["weight_decay"])
+
+    optimizer = torch.optim.Adam(gnn.parameters(),lr=model_param["lr"],weight_decay=0)
+
 
     # init sampler for netative sampling during training.
     dsd_sampler = DSD_sampler("dataset/EHR")
@@ -58,16 +60,20 @@ def train(**kwargs):
         gnn.train()
 
         for idx, (feat, dise) in enumerate(train_data_loader):
-            pred, pred_neg = gnn.forward(feat, dise, dsd_sampler)
+            pred, pred_neg, emb_user, emb_dise, neg_emb_dise = gnn.forward(feat, dise, dsd_sampler)
             
-            loss = create_bpr_loss(pred, pred_neg)
+            bpr_loss = create_bpr_loss(pred, pred_neg)
+
+            l2_loss = create_l2_loss(emb_user, emb_dise, neg_emb_dise)
+
+            loss = bpr_loss + model_param["weight_decay"]*l2_loss
 
             optimizer.zero_grad()
             loss.backward()
 
             optimizer.step()
 
-            total_loss += loss.item()
+            total_loss += bpr_loss.item()
         
         print("{} Epoch {}/{}: train loss: {:.6f}".format(now(),epoch+1,
             model_param["num_epoch"],total_loss))
@@ -98,6 +104,13 @@ def create_bpr_loss(pred, pred_neg):
     maxi = torch.sigmoid(pred - pred_neg).log()
     bpr_loss = -torch.mean(maxi)
     return bpr_loss
+
+def create_l2_loss(emb_user, emb_dise, neg_emb_dise):
+    batch_size = emb_user.shape[0]
+    l2_loss = torch.sum(emb_user**2) + torch.sum(emb_dise**2) + torch.sum(neg_emb_dise**2)
+    l2_loss = l2_loss / batch_size
+    return l2_loss
+
 
 def predict(model, data_loader):
     # TODO

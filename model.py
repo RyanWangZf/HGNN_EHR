@@ -136,7 +136,7 @@ class HGNN(torch.nn.Module):
             neg_emb_dise = self.forward_dsd(neg_data, ts_label_neg)
             neg_pred_score = neg_emb_dise.mul(emb_user).sum(1)
 
-            return pred_score, neg_pred_score
+            return pred_score, neg_pred_score, emb_user, emb_dise, neg_emb_dise
         
         else:
             return pred_score
