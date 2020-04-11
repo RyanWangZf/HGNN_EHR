@@ -38,6 +38,8 @@ def run(**kwargs):
     model_param.update(data_model_param)
 
     gnn = HGNN(**model_param)
+    if model_param["use_gpu"]:
+        gnn.cuda()
 
     ckpt_path = kwargs.get("ckpt")
 
