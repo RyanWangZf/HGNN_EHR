@@ -194,7 +194,7 @@ def evaluate(model, data_loader, dsd_sampler, top_k_list=[3,5]):
         ndcg = np.mean(result_map["ndcg_{}".format(top_k)])
         recall = np.mean(result_map["hit_{}".format(top_k)])
         print_log += "Recall@{}: {:.4f}, nDCG@{}: {:.4f}.".format(top_k, recall, top_k, ndcg)
-        final_result["ndcg_{}".format(top_k)] = ndcg_k
+        final_result["ndcg_{}".format(top_k)] = ndcg
         final_result["recall_{}".format(top_k)] = recall
 
     return final_result, print_log, result_map
