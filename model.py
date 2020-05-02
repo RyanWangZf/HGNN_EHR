@@ -300,7 +300,7 @@ class HGNN(torch.nn.Module):
     def _avg_on_real_neighbor(self, msg, ts):
         real_num_2_hop = torch.unsqueeze((ts != 0).sum(1).float(),1)
         weight = 1 / (real_num_2_hop + 1e-8)
-        weight[weight == 1e8] = 0
+        weight[weight >= 1e8] = 0
         
         return msg.sum(1).mul(weight)
 

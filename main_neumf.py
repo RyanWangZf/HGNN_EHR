@@ -63,7 +63,9 @@ class NeuMF(torch.nn.Module):
         emb_user = emb_symp.sum(1).mul(weight)
 
         emb_u_s = torch.cat([emb_user, emb_dise], axis=1)
-        h_u_s = self.linear_1(emb_u_s)
+        h_u_s = F.relu(emb_u_s)
+        h_u_s = self.linear_1(h_u_s)
+        h_u_s = F.relu(h_u_s)
         pred_score = self.linear_2(h_u_s) # ?, 1
 
 
@@ -79,7 +81,9 @@ class NeuMF(torch.nn.Module):
             neg_emb_dise = self.dise_embeds(ts_label_neg)
             
             neg_emb_u_s = torch.cat([emb_user, neg_emb_dise], axis=1)
-            neg_h_u_s = self.linear_1(neg_emb_u_s)
+            neg_h_u_s = F.relu(neg_emb_u_s)
+            neg_h_u_s = self.linear_1(neg_h_u_s)
+            neg_h_u_s = F.relu(neg_h_u_s)
             neg_pred_score = self.linear_2(neg_h_u_s) # ?, 1
 
             # neg_pred_score = neg_emb_dise.mul(emb_user).sum(1)
@@ -97,6 +101,15 @@ class NeuMF(torch.nn.Module):
         weight[weight >= 1e8] = 0
         emb_user = emb_symp.sum(1).mul(weight)
         return emb_user
+
+
+    def forward_user_dise(self, emb_user, emb_dise):
+        emb_u_s = torch.cat([emb_user, emb_dise],axis=1)
+        h = F.relu(emb_u_s)
+        h = self.linear_1(h)
+        h = F.relu(h)
+        h = self.linear_2(h)
+        return h
 
     def gen_all_dise_emb(self):
         self.eval()
@@ -249,8 +262,7 @@ def evaluate(model, data_loader, top_k_list=[3,5]):
     for idx, (feat,dise) in enumerate(data_loader):
         with torch.no_grad():
             emb_user = model.forward_user(feat)
-
-        batch_pred_score = emb_user.matmul(emb_dise.T)
+            batch_pred_score = model.forward_user_dise(emb_user, emb_dise)
 
         for j,dise_ in enumerate(dise):
             # evluate top k

@@ -8,7 +8,7 @@ def default_config():
             "layer_size_dsd": [64,64],
             "layer_size_usu": [64,64,64],
             "dropout_ratio": 0.1,
-            "lr":1e-3,
+            "lr":0.01,
             "weight_decay":1e-3,
             "batch_size":1024,
             "num_epoch":100,
