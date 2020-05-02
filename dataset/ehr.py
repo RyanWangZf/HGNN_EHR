@@ -17,13 +17,13 @@ class EHR:
 
         label_path = os.path.join(prefix, "{}/label.npy".format(mode))
         
-        self.data = np.load(path).item()
+        self.data = np.load(path,allow_pickle=True).item()
 
         self._parse_metapath_params(self.data)
 
 
         # disease type
-        self.label = np.load(label_path)
+        self.label = np.load(label_path,allow_pickle=True)
         
         self.num_sample = self.label.shape[0]
 
@@ -31,8 +31,8 @@ class EHR:
             assert self.data[k].shape[0] == self.num_sample
 
         # load maps
-        self.dise2symp = np.load(os.path.join(prefix,"dise2symp.npy")).item()
-        self.symp2dise = np.load(os.path.join(prefix,"symp2dise.npy")).item()
+        self.dise2symp = np.load(os.path.join(prefix,"dise2symp.npy"),allow_pickle=True).item()
+        self.symp2dise = np.load(os.path.join(prefix,"symp2dise.npy"),allow_pickle=True).item()
         self.num_dise = len(self.dise2symp.keys())
         self.num_symp = len(self.symp2dise.keys())
 
@@ -243,10 +243,10 @@ class EHR_load:
         num_dise = dise_ar.max() + 1
 
         # load maps
-        self.dise2symp = np.load(os.path.join(prefix,"dise2symp.npy")).item()
-        self.symp2user = np.load(os.path.join(prefix,"symp2user.npy")).item()
-        self.user2symp = np.load(os.path.join(prefix,"user2symp.npy")).item()
-        self.symp2dise = np.load(os.path.join(prefix,"symp2dise.npy")).item()
+        self.dise2symp = np.load(os.path.join(prefix,"dise2symp.npy"),allow_pickle=True).item()
+        self.symp2user = np.load(os.path.join(prefix,"symp2user.npy"),allow_pickle=True).item()
+        self.user2symp = np.load(os.path.join(prefix,"user2symp.npy"),allow_pickle=True).item()
+        self.symp2dise = np.load(os.path.join(prefix,"symp2dise.npy"),allow_pickle=True).item()
 
         print("start sampling neighborhood :", mode)
 
