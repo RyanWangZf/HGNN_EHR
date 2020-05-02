@@ -17,7 +17,7 @@ class EHR:
 
         label_path = os.path.join(prefix, "{}/label.npy".format(mode))
         
-        self.data = np.load(path,allow_pickle=True).item()
+        self.data = np.load(path).item()
 
         self._parse_metapath_params(self.data)
 
@@ -31,8 +31,8 @@ class EHR:
             assert self.data[k].shape[0] == self.num_sample
 
         # load maps
-        self.dise2symp = np.load(os.path.join(prefix,"dise2symp.npy"),allow_pickle=True).item()
-        self.symp2dise = np.load(os.path.join(prefix,"symp2dise.npy"),allow_pickle=True).item()
+        self.dise2symp = np.load(os.path.join(prefix,"dise2symp.npy")).item()
+        self.symp2dise = np.load(os.path.join(prefix,"symp2dise.npy")).item()
         self.num_dise = len(self.dise2symp.keys())
         self.num_symp = len(self.symp2dise.keys())
 
@@ -51,6 +51,15 @@ class EHR:
         self.metapath_param["num_usu_3_hop"] = self.data["usu_3_0"].shape[1]
 
         return
+
+
+    def get_feat_data(self):
+        """Get array-like feature-label data,
+        used for GBDT, MLP models.
+        """
+        feat = self.data["symp"]
+        label = self.label
+        return feat, label        
 
     def __getitem__(self, idx):
         assert idx < self.num_sample
@@ -234,10 +243,10 @@ class EHR_load:
         num_dise = dise_ar.max() + 1
 
         # load maps
-        self.dise2symp = np.load(os.path.join(prefix,"dise2symp.npy"),allow_pickle=True).item()
-        self.symp2user = np.load(os.path.join(prefix,"symp2user.npy"),allow_pickle=True).item()
-        self.user2symp = np.load(os.path.join(prefix,"user2symp.npy"),allow_pickle=True).item()
-        self.symp2dise = np.load(os.path.join(prefix,"symp2dise.npy"),allow_pickle=True).item()
+        self.dise2symp = np.load(os.path.join(prefix,"dise2symp.npy")).item()
+        self.symp2user = np.load(os.path.join(prefix,"symp2user.npy")).item()
+        self.user2symp = np.load(os.path.join(prefix,"user2symp.npy")).item()
+        self.symp2dise = np.load(os.path.join(prefix,"symp2dise.npy")).item()
 
         print("start sampling neighborhood :", mode)
 
@@ -373,7 +382,7 @@ def read_disease2id(prefix="EHR"):
 
 if __name__ == '__main__':
     ehr = EHR_load(prefix = "EHR")
-    ehr.pre_processing()
+    # ehr.pre_processing()
     ehr.post_processing("train")
     ehr.post_processing("test")
     ehr.post_processing("val")
