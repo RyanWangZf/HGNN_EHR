@@ -104,12 +104,17 @@ class NeuMF(torch.nn.Module):
 
 
     def forward_user_dise(self, emb_user, emb_dise):
-        emb_u_s = torch.cat([emb_user, emb_dise],axis=1)
-        h = F.relu(emb_u_s)
-        h = self.linear_1(h)
-        h = F.relu(h)
-        h = self.linear_2(h)
-        return h
+        h_result = []
+        for i in range(emb_dise.shape[0]):
+            emb_u_s = torch.cat([emb_user, emb_dise[i].repeat(emb_user.shape[0],1)], axis=1)
+            h = F.relu(emb_u_s)
+            h = self.linear_1(h)
+            h = F.relu(h)
+            h = self.linear_2(h)
+            h_result.append(h)
+
+        pred = torch.cat(h_result, 1)
+        return pred
 
     def gen_all_dise_emb(self):
         self.eval()
