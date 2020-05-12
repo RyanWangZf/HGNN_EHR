@@ -5,8 +5,8 @@ import numpy as np
 from collections import defaultdict
 
 import pdb
-import re, os
-
+import os
+import re
 np.random.seed(2020)
 
 class EHR:
@@ -52,6 +52,7 @@ class EHR:
 
         return
 
+
     def get_feat_data(self):
         """Get array-like feature-label data,
         used for GBDT, MLP models.
@@ -71,89 +72,34 @@ class EHR:
     def __len__(self):
         return self.num_sample
 
+
 class EHR_load:
     def __init__(self, prefix="EHR"):
         self.prefix = prefix
-        self.regex_split = re.compile("[。，？；！、]")
-        self.regex_eng = re.compile("[a-zA-Z\\\/\(\)]")
-        self.regex_dp = re.compile("[.,?;!/)('。，？；！、]")
 
     def pre_processing(self):
         prefix = self.prefix
+
+        data_path = os.path.join(prefix,"sampleNew.csv")
+        self.raw_df = pd.read_csv(data_path,encoding="utf-8")
         self.dise2id = read_disease2id(prefix)
 
         # build neighborhood maps
-        self.symp2id = {}
-        self.id2symp = defaultdict(list)
- 
-
-        data_path = os.path.join(prefix,"sampleNew_p_202005111638.xlsx")
-        self.raw_df = pd.read_excel(data_path,encoding="utf-8")
-        self.raw_df["dises"] = self.raw_df["3"].apply(lambda x: x.split("|"))
-
-        # rearange df by spliting the raw diseases
-        f_out = open(os.path.join(prefix,"data.txt"),"w",encoding="utf-8")
-        
-        uid = 1
-        for i in range(len(self.raw_df)):
-            line = self.raw_df.iloc[i]
-            num_result = line["num_result"]
-            try:
-                symps = num_result.split("@@")
-            except:
-                print("[Warning] Cannot process symptoms {} at line {}".format(num_result, i))
-                continue
-
-            up_symp2id = {}
-            symp_ids = []
-            for symp in symps:
-                idx, sym = symp.split(",")
-                sym = self.regex_dp.sub("",sym).strip()
-                idx = re.findall("[0-9]+",idx)[0]
-                up_symp2id[sym] = idx
-                self.id2symp[idx].append(sym)
-                symp_ids.append(idx)
-
-            self.symp2id.update(up_symp2id)
-
-            # do symptom standardization
-            uq_symp_ids = list(set(symp_ids))
-            kw_list = [self.id2symp[u][0] for u in uq_symp_ids]
-
-            for ds in line["dises"]:
-                diseid = self.dise2id.get(ds)
-                if diseid is None:
-                    continue
-                wrt_line = str(uid) + "\t" + str(diseid) + "\t" + "\t".join(kw_list) + "\n"
-                f_out.write(wrt_line)
-                uid += 1
-
-        f_out.close()
-        print("Pre-processing done.")
-
-
-    def split(self):
-        prefix = self.prefix
         self.symp2id = {}
         self.dise2symp = defaultdict(list)
         self.symp2dise = defaultdict(list)
         self.symp2user = defaultdict(list)
         self.user2symp = defaultdict(list)
 
-        # read pre-processed data
-        f_in = open(os.path.join(self.prefix, "data.txt"),"r", encoding="utf-8")
-        all_lines = f_in.readlines()
-        f_in.close()
-
-        all_idx = np.arange(len(all_lines))
+        # split train and test
+        all_idx = np.arange(len(self.raw_df))
         np.random.shuffle(all_idx)
 
-        num_tr_sample = int(len(all_idx) * 0.6)
-        num_va_sample = int(len(all_idx) * 0.2)
+        num_tr_sample = int(len(all_idx) * 0.7)
+        num_va_sample = int(len(all_idx) * 0.1)
 
-        tr_idx = all_idx[:num_tr_sample]
-        va_idx = all_idx[num_tr_sample:num_tr_sample+num_va_sample]
-        te_idx = all_idx[num_tr_sample+num_va_sample:]
+        self.df_tr = self.raw_df.iloc[all_idx[:num_tr_sample]]
+        self.df_te = self.raw_df.iloc[all_idx[num_tr_sample:]]
 
         tr_prefix = os.path.join(prefix, "train")
         te_prefix = os.path.join(prefix, "test")
@@ -171,36 +117,45 @@ class EHR_load:
 
         f_out_te_name = os.path.join(te_prefix,"data.txt")
         f_out_te = open(f_out_te_name, "w", encoding="utf-8")
-        f_out_te_more_name = os.path.join(te_prefix,"data_moresymp.txt")
-        f_out_te_more = open(f_out_te_more_name,"w",encoding="utf-8")
 
         f_out_va_name = os.path.join(va_prefix,"data.txt")
         f_out_va = open(f_out_va_name, "w", encoding="utf-8")
 
+        # start from 1
+        # make 0 as NA
         num_kws = 1
-        num_tr = 0
-        print("Start processing train...")
-        for idx in tr_idx:
-            data = all_lines[idx]
-            line_data = data.strip().split("\t")
-            symp_list = line_data[2:]
-            uid = line_data[0]
-            diseid = line_data[1]
+        uid = 1
+
+        print("Start Processing df train...")
+        for idx in range(len(self.df_tr)):
+            data = self.raw_df.iloc[idx]
+
+            # get diseases
+            diseid = self.dise2id.get(data["3"])
+            if diseid is None:
+                continue
+
+            raw_symps = data["7"]
+            kws = self.get_keywords(raw_symps)
             kws_list = []
-            for kw in symp_list:
+            for kw in kws:
                 if self.symp2id.get(kw) is None:
                     self.symp2id[kw] = str(num_kws)
                     num_kws += 1
+
                 sid = self.symp2id[kw]
                 kws_list.append(sid)
+
                 self.dise2symp[str(diseid)].append(str(sid))
                 self.symp2user[str(sid)].append(str(uid))
                 self.symp2dise[str(sid)].append(str(diseid))
                 self.user2symp[str(uid)].append(str(sid))
 
+
+            # write line
             wrt_line = str(uid) + "\t" + diseid + "\t" + "\t".join(kws_list) + "\n"
             f_out_tr.write(wrt_line)
-            num_tr += 1
+            uid += 1
 
         # unique dict's values
         self.unique_dict(self.dise2symp)
@@ -208,26 +163,30 @@ class EHR_load:
         self.unique_dict(self.symp2dise)
         self.unique_dict(self.symp2user)
 
+        # save maps
+        num_tr_final = uid
         f_out_tr.close()
-
         np.save(os.path.join(prefix,"dise2symp.npy"),self.dise2symp)
         np.save(os.path.join(prefix,"symp2dise.npy"),self.symp2dise)
         np.save(os.path.join(prefix,"symp2id.npy"),self.symp2id)
         np.save(os.path.join(prefix,"symp2user.npy"),self.symp2user)
         np.save(os.path.join(prefix,"user2symp.npy"),self.user2symp)
 
-        print("Start processing validation & test...")
-        num_va = 0
-        for idx in va_idx:
-            data = all_lines[idx]
-            line_data = data.strip().split("\t")
+        print("Start Processing df test...")
 
-            uid = line_data[0]
-            diseid = line_data[1]
-            symp_list = line_data[2:]
+        for idx in range(len(self.df_te)):
+            data = self.df_te.iloc[idx]
 
+            # get diseases
+            diseid = self.dise2id.get(data["3"])
+            if diseid is None:
+                continue
+
+            raw_symps = data["7"]
+            kws = self.get_keywords(raw_symps)
             kws_list = []
-            for kw in symp_list:
+
+            for kw in kws:
                 sid = self.symp2id.get(kw)
                 if sid is None:
                     continue
@@ -237,46 +196,29 @@ class EHR_load:
             if len(kws_list) == 0:
                 continue
 
-            wrt_line = str(uid) + "\t" + diseid + "\t" + "\t".join(kws_list) + "\n"
-            f_out_va.write(wrt_line)
-            num_va += 1
-
-
-        f_out_va.close()
-
-
-        num_te = 0
-        for idx in te_idx:
-            data = all_lines[idx]
-            line_data = data.strip().split("\t")
-
-            uid = line_data[0]
-            diseid = line_data[1]
-            symp_list = line_data[2:]
-
-            kws_list = []
-            for kw in symp_list:
-                sid = self.symp2id.get(kw)
-                if sid is None:
-                    continue
-                else:
-                    kws_list.append(sid)
-
-            if len(kws_list) == 0:
-                continue
-
+            uid += 1
+            # write line
             wrt_line = str(uid) + "\t" + diseid + "\t" + "\t".join(kws_list) + "\n"
             f_out_te.write(wrt_line)
-            num_te += 1
-
-            if len(kws_list) > 3:
-                f_out_te_more.write(wrt_line)
-
 
         f_out_te.close()
+        num_te_final = uid - num_tr_final
+        print("# Tr:{}, # Te:{}".format(num_tr_final,num_te_final))
 
-        print("# Tr:{}, # Va: {} # Te:{}".format(num_tr, num_va, num_te))
-        print("# Symptoms Used:", len(self.symp2id.keys()))
+        # split tr and va
+        all_tr_idx = np.arange(num_tr_final)
+        np.random.shuffle(all_tr_idx)
+
+        f_tr = open(f_out_tr_name, "r", encoding="utf-8")
+        lines = f_tr.readlines()
+
+        for idx in all_tr_idx[:num_va_sample]:
+            f_out_va.write(lines[idx])
+
+        f_tr.close()
+        f_out_va.close()
+
+        print("Done Pre-Processing.")
 
     def post_processing(self, mode="train"):
         # ---------------
@@ -284,7 +226,7 @@ class EHR_load:
 
         "for metapath DSD"
         num_DSD_1_hop = 10
-        num_DSD_2_hop = 5
+        num_DSD_2_hop = 2
 
         "for metapath USU"
         num_USU_1_hop = 5
@@ -383,6 +325,7 @@ class EHR_load:
 
         print("Done :", mode)
 
+
     def read_data(self, path):
         # load data in array
         f_in = open(path,"r",encoding="utf-8")
@@ -399,16 +342,9 @@ class EHR_load:
         dise_ar = np.array(dise_list).astype("int")
         return dise_ar, symp_ar
 
-    def get_keywords(self, raw_symp):
-        symps = raw_symp.split("@@")
-        dic = {}
-        for symp in symps:
-            idx, sym = symp.split(",")
-            sym = self.regex_dp.sub("",sym).strip()
-            idx = re.findall("[0-9]+",idx)[0]
-            dic[sym] = idx
-
-        return dic
+    def get_keywords(self,sen):
+        res = re.findall("(?<=\))[^\)]+(?=\()",sen)
+        return res
 
     def unique_dict(self, dic):
         for k in dic.keys():
@@ -429,18 +365,17 @@ class EHR_load:
         np.random.shuffle(all_idx)
         return ar[all_idx[:target_num]]
 
-
 def read_disease2id(prefix="EHR"):
     filename = os.path.join(prefix,"id2disease.txt")
     f = open(filename, "r", encoding="utf-8")
     data = f.readlines()
     disease2id = {}
+
     for i,line in enumerate(data):
-        # id_d, ds = line.split("\t")
-        ds = line.strip()
+        id_d, ds = line.split("\t")
         ds_list = ds.split("#")
         for d in ds_list:
-            disease2id[d.strip()] = i
+            disease2id[d.strip()] = id_d
 
     f.close()
     return disease2id
@@ -448,7 +383,7 @@ def read_disease2id(prefix="EHR"):
 if __name__ == '__main__':
     ehr = EHR_load(prefix = "EHR")
     # ehr.pre_processing()
-    # ehr.split()
     ehr.post_processing("train")
     ehr.post_processing("test")
     ehr.post_processing("val")
+

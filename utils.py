@@ -36,19 +36,19 @@ class EarlyStopping:
         "if set False, it is smaller it is better, e.g. loss."
         self.larger_better = larger_better
 
-    def __call__(self, val_metric, model):
+    def __call__(self, val_metric, model, model_name=None):
         if self.larger_better:
-            self.call_larger_better(val_metric, model)
+            self.call_larger_better(val_metric, model,model_name)
         else:
-            self.call_smaller_better(val_metric,model)
+            self.call_smaller_better(val_metric,model,model_name)
 
 
-    def call_larger_better(self, val_metric, model):
+    def call_larger_better(self, val_metric, model, model_name=None):
         score = val_metric
 
         if self.best_score is None:
             self.best_score = score
-            self.save_checkpoint(score, model)
+            self.save_checkpoint(score, model, model_name)
 
         elif score < self.best_score + self.delta:
             self.counter += 1
@@ -56,47 +56,54 @@ class EarlyStopping:
                 print("EarlyStopping counter: {} out of {}".format(self.counter, self.patience))
             if self.counter >= self.patience:
                 self.early_stop = True
-                self.load_checkpoint(model)
+                self.load_checkpoint(model, model_name)
         else:
             self.best_score = score
-            self.save_checkpoint(score, model)
+            self.save_checkpoint(score, model, model_name)
             self.counter = 0
 
-    def call_smaller_better(self, val_metric, model):
+    def call_smaller_better(self, val_metric, model, model_name=None):
         score = val_metric
 
         if self.best_score is None:
             self.best_score = score
-            self.save_checkpoint(score, model)
+            self.save_checkpoint(score, model, model_name)
         elif score > self.best_score + self.delta:
             self.counter += 1
             if self.verbose:
                 print("EarlyStopping counter: {} out of {}".format(self.counter, self.patience))
             if self.counter >= self.patience:
                 self.early_stop = True
-                self.load_checkpoint(model)
+                self.load_checkpoint(model, model_name)
         else:
             self.best_score = score
-            self.save_checkpoint(score, model)
+            self.save_checkpoint(score, model, model_name)
             self.counter = 0
         pass
 
 
-    def save_checkpoint(self, val_metric, model):
+    def save_checkpoint(self, val_metric, model, model_name=None):
         '''Saves model when validation loss decrease.'''
         if not os.path.exists("ckpt"):
             os.mkdir("ckpt")
 
-        torch.save(model.state_dict(), './ckpt/checkpoint.pt')
+        if model_name is None:
+            torch.save(model.state_dict(), './ckpt/checkpoint.pt')
+        else:
+            torch.save(model.state_dict(), './ckpt/{}.pt'.format(model_name))
+
         if self.larger_better:
             self.val_metric_max = val_metric        
         else:
             self.val_metric_min = val_metric
 
-    def load_checkpoint(self, model):
-        ckpt = torch.load("./ckpt/checkpoint.pt")
-        model.load_state_dict(ckpt)
+    def load_checkpoint(self, model, model_name=None):
+        if model_name is None:
+            ckpt = torch.load("./ckpt/checkpoint.pt")
+        else:
+            ckpt = torch.load("./ckpt/{}.pt".format(model_name))
 
+        model.load_state_dict(ckpt)
 
 def now():
     return str(time.strftime('%Y-%m-%d %H:%M:%S'))
@@ -175,6 +182,16 @@ def read_dise2id(prefix="./dataset/EHR"):
 
     return disease2id, id2disease
 
+
+def read_symp2id(prefix="./dataset/EHR"):
+    filename = os.path.join(prefix,"symp2id.npy")
+    symp2id = np.load(filename,allow_pickle=True).item()
+    id2symp = defaultdict()
+
+    for k,v in symp2id.items():
+        id2symp[v] = k
+
+    return symp2id, id2symp
 
 def parse_rank(pred_rank, id2dise):
     pred_list = []
