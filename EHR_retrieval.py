@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+"""Usage: python EHR_retrieval.py main --symp=1 --mode="sds" --top_k=10
+"""
 import os
 import pdb
 
@@ -113,11 +115,6 @@ def main(**kwargs):
 
     # init the retrieval sysmtem
     ehr_ret = EHR_retrieval(mode=param["mode"])
-
-
-    # load model
-
-    # load test data
 
     # do retrieval
     rank_symp = ehr_ret(symp_idx=param["symp"], top_k=param["top_k"])

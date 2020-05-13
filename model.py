@@ -2,6 +2,7 @@
 import torch
 import numpy as np
 from collections import defaultdict
+import torch.nn.functional as F
 
 import pdb
 import os
@@ -161,12 +162,16 @@ class HGNN(torch.nn.Module):
                 self.linear_dsd_2_2(emb_d.mul(torch.unsqueeze(emb_s_, 1))) # ?, 2, k
 
             m_s_s = self.linear_dsd_2_1(emb_s_) # ?,k
-            m_s_s = self.dropout_fn(m_s_s)
+            # m_s_s = self.dropout_fn(m_s_s)
 
             m_s_d = self._avg_on_real_neighbor(m_s_d, dise_2_hop) # ?,k
-            m_s_d = self.dropout_fn(m_s_d)
+            # m_s_d = self.dropout_fn(m_s_d)
 
             emb_s_1_ = self.act_fn(m_s_s + m_s_d)
+
+            emb_s_1_ = self.dropout_fn(emb_s_1_)
+            emb_s_1_ = F.normalize(emb_s_1_, p=2, dim=1)
+
             emb_s_1_list.append(torch.unsqueeze(emb_s_1_,1))
 
         emb_s_1 = torch.cat(emb_s_1_list, 1) # ?, 10, k
@@ -180,6 +185,8 @@ class HGNN(torch.nn.Module):
         m_d_d = self.linear_dsd_1_1(target_emb_d) # ?, k
 
         emb_d_last = self.act_fn(m_d_s + m_d_d)
+        emb_d_last = self.dropout_fn(emb_d_last)
+        emb_d_last = F.normalize(emb_d_last, p=2, dim=1)
 
         return emb_d_last
 
@@ -198,10 +205,11 @@ class HGNN(torch.nn.Module):
                 emb_s_3 = self.symp_embeds(symp_3_hop) # ?,5, k
                 m_u_s = self.linear_usu_3(emb_s_3) # ?, 5, k
                 m_u_s = self._avg_on_real_neighbor(m_u_s, symp_3_hop)
-                m_u_s = self.dropout_fn(m_u_s)
 
                 # no m_u_u here because we dont have users embeddings
-                emb_u_2_ = self.act_fn(m_u_s) # ?, k
+                m_u_s = self.act_fn(m_u_s) # ?, k
+                m_u_s = self.dropout_fn(m_u_s)
+                emb_u_2_ = F.normalize(m_u_s, p=2, dim=1)
 
                 emb_u_2_list.append(torch.unsqueeze(emb_u_2_, 1))
 
@@ -212,13 +220,16 @@ class HGNN(torch.nn.Module):
                 self.linear_usu_2_2(emb_u_2.mul(torch.unsqueeze(emb_s_1_,1)))
 
             m_s_u = self._avg_on_real_neighbor(m_s_u, user_2_hop) # ?, k
-            m_s_u = self.dropout_fn(m_s_u)
+            # m_s_u = self.dropout_fn(m_s_u)
 
             m_s_s = self.linear_usu_2_1(emb_s_1_) # ?, k
-            m_s_s = self.dropout_fn(m_s_s)
+            # m_s_s = self.dropout_fn(m_s_s)
 
-            emb_s_1_list.append(torch.unsqueeze(
-                    self.act_fn(m_s_s + m_s_u),1))
+            emb_ego_s = self.act_fn(m_s_s + m_s_u)
+            emb_ego_s = self.dropout_fn(emb_ego_s)
+            emb_ego_s = F.normalize(emb_ego_s, p=2, dim=1)
+
+            emb_s_1_list.append(torch.unsqueeze(emb_ego_s,1))
 
         emb_s_1_last = torch.cat(emb_s_1_list, 1) # ?, 5, k
         symp_1_hop = data["usu_1"]
@@ -227,6 +238,9 @@ class HGNN(torch.nn.Module):
 
         # no m_u_u because we dont have users' embeddings
         emb_u_last = self.act_fn(m_u_s)
+        emb_u_last = self.dropout_fn(emb_u_last)
+        emb_u_last = F.normalize(emb_u_last, p=2, dim=1)
+
         return emb_u_last
 
     def gen_all_dise_emb(self, dsd_sampler):
