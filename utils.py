@@ -230,9 +230,9 @@ def parse_rank(pred_rank, id2dise):
     for i in range(len(pred_rank)):
         this_rank = pred_rank[i]
         if num_dim > 1:
-            pred_list.append([id2dise[str(x)] for x in this_rank])
+            pred_list.append([id2dise[x] for x in this_rank])
         else:
-            pred_list.append(id2dise[str(this_rank[0])])
+            pred_list.append(id2dise[this_rank[0]])
 
     pred_list = np.array(pred_list)
 

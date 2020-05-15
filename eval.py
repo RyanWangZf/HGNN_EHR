@@ -1,3 +1,6 @@
+"""Usage: python eval.py main --ckpt=ckpt/GNN.pt --use_gpu=False
+"""
+
 # -*- coding: utf-8 -*-
 
 import torch
@@ -15,7 +18,7 @@ from utils import collate_fn, now, load_ckpt, read_dise2id
 
 from config import default_config
 
-def run(**kwargs):
+def main(**kwargs):
     model_param = default_config()
     model_param.update({"top_k":3})
 
@@ -45,9 +48,9 @@ def run(**kwargs):
 
     if ckpt_path is None:
         print("[Warning] Do not set ckpt path, load from the default path.")
-        load_ckpt("ckpt/checkpoint.pt", gnn)
+        load_ckpt("ckpt/checkpoint.pt", gnn, model_param["use_gpu"])
     else:
-        load_ckpt(ckpt_path, gnn)
+        load_ckpt(ckpt_path, gnn, model_param["use_gpu"])
 
     dsd_sampler = DSD_sampler("dataset/EHR")
     usu_sampler = USU_sampler("dataset/EHR")
