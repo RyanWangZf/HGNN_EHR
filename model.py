@@ -28,10 +28,16 @@ class HGNN(torch.nn.Module):
             assert l == embed_dim
 
         # build hard map for negative sampling
-        self.hard_neg_map = {}
-        for i in range(self.num_dise+1):
-            self.hard_neg_map[i] = i+1
-        self.hard_neg_map[i] = i-1
+        if kwargs.get("hard_map") is None or kwargs["hard_ratio"] == 0:
+            self.hard_neg_map = {}
+            for i in range(self.num_dise+1):
+                self.hard_neg_map[i] = [i+1]
+            self.hard_neg_map[i] = [i-1]
+            self.mine_hard = False
+        else:
+            self.hard_neg_map = kwargs.get("hard_map")
+            self.hard_ratio = kwargs["hard_ratio"]
+            self.mine_hard = True
 
         # init embeddings
         self.symp_embeds = torch.nn.Embedding(
@@ -43,7 +49,8 @@ class HGNN(torch.nn.Module):
         self.dise_embeds = torch.nn.Embedding(
             self.num_dise+1,
             embed_dim,
-            padding_idx=0)
+            padding_idx=0,
+            )
 
         # init weights based on meta-path params
 
@@ -68,6 +75,14 @@ class HGNN(torch.nn.Module):
             layer_size_dsd[0],
             layer_size_dsd[1],
             bias=False,)
+        
+        self.linear_cat_1 = torch.nn.Linear(layer_size_dsd[0]*2,
+                                           layer_size_dsd[0],
+                                           bias=True)
+
+        self.linear_cat_2 = torch.nn.Linear(layer_size_dsd[0]*2,
+                                           layer_size_dsd[0],
+                                           bias=True)
 
         # for U-S-U
         self.linear_usu_3 = torch.nn.Linear(
@@ -89,8 +104,13 @@ class HGNN(torch.nn.Module):
             embed_dim, 
             layer_size_usu[0],
             bias=False,)
-
-        self.act_fn = torch.nn.LeakyReLU(0.2)
+        
+        self.linear_usu_cat = torch.nn.Linear(layer_size_usu[0]*2,
+                                           layer_size_usu[0],
+                                           bias=True)
+                
+        # self.act_fn = torch.nn.LeakyReLU(0.2)
+        self.act_fn = torch.nn.Tanh()
         self.dropout_fn = torch.nn.Dropout(p=kwargs["dropout_ratio"])
 
     def forward(self, feat, label, dsd_sampler=None):
@@ -135,6 +155,7 @@ class HGNN(torch.nn.Module):
                     neg_data[k] = torch.LongTensor(neg_data[k])
 
             neg_emb_dise = self.forward_dsd(neg_data, ts_label_neg)
+
             neg_pred_score = neg_emb_dise.mul(emb_user).sum(1)
 
             return pred_score, neg_pred_score, emb_user, emb_dise, neg_emb_dise
@@ -148,28 +169,33 @@ class HGNN(torch.nn.Module):
 
         # for d-s-d
         emb_s = self.symp_embeds(data["dsd_1"]) # ?, 10, 16
+        # emb_s = F.normalize(emb_s, p=2, dim=1)
 
         emb_s_1_list = []
 
         for i in range(self.num_dsd_1_hop):
             dise_2_hop = data["dsd_2_{}".format(i)]
-
+    
             # m(s-d)
             emb_d = self.dise_embeds(dise_2_hop) # ?, 2, k
+            # emb_d = F.normalize(emb_d, p=2, dim=1)
+            
             emb_s_ = emb_s[:,i]
 
             m_s_d = self.linear_dsd_2_1(emb_d) + \
                 self.linear_dsd_2_2(emb_d.mul(torch.unsqueeze(emb_s_, 1))) # ?, 2, k
 
             m_s_s = self.linear_dsd_2_1(emb_s_) # ?,k
-            # m_s_s = self.dropout_fn(m_s_s)
+            m_s_s = self.dropout_fn(m_s_s)
 
             m_s_d = self._avg_on_real_neighbor(m_s_d, dise_2_hop) # ?,k
-            # m_s_d = self.dropout_fn(m_s_d)
-
+            m_s_d = self.dropout_fn(m_s_d)
+            
+            # cat
+            # emb_s_1_ = self.act_fn(self.linear_cat_2(torch.cat([m_s_s, m_s_d], 1)))
             emb_s_1_ = self.act_fn(m_s_s + m_s_d)
-
-            emb_s_1_ = self.dropout_fn(emb_s_1_)
+            
+            # emb_s_1_ = self.dropout_fn(emb_s_1_)
             emb_s_1_ = F.normalize(emb_s_1_, p=2, dim=1)
 
             emb_s_1_list.append(torch.unsqueeze(emb_s_1_,1))
@@ -184,9 +210,11 @@ class HGNN(torch.nn.Module):
         m_d_s = self._avg_on_real_neighbor(m_d_s, symp_1_hop) # ?, k
         m_d_d = self.linear_dsd_1_1(target_emb_d) # ?, k
 
+        # emb_d_last = self.act_fn(self.linear_cat_1(torch.cat([m_d_d, m_d_s], 1)))
         emb_d_last = self.act_fn(m_d_s + m_d_d)
-        emb_d_last = self.dropout_fn(emb_d_last)
-        emb_d_last = F.normalize(emb_d_last, p=2, dim=1)
+        
+        # emb_d_last = self.dropout_fn(emb_d_last)
+        # emb_d_last = F.normalize(emb_d_last, p=2, dim=1)
 
         return emb_d_last
 
@@ -195,6 +223,8 @@ class HGNN(torch.nn.Module):
         emb_s_1_list = []
 
         emb_s_1 = self.symp_embeds(data["usu_1"]) #?, 5, k
+        # emb_s_1 = F.normalize(emb_s_1, p=2, dim=1)
+        
         for i in range(self.num_usu_1_hop):
             emb_u_2_list = []
             emb_s_1_ = emb_s_1[:,i] # ?, k
@@ -202,8 +232,11 @@ class HGNN(torch.nn.Module):
             for j in range(self.num_usu_2_hop):
                 name = "usu_3_{}".format(i*self.num_usu_1_hop+j)
                 symp_3_hop = data[name]
-                emb_s_3 = self.symp_embeds(symp_3_hop) # ?,5, k
+                emb_s_3 = self.symp_embeds(symp_3_hop) # ?, 5, k
+                # emb_s_3 = F.normalize(emb_s_3, p=2, dim=1)
+                
                 m_u_s = self.linear_usu_3(emb_s_3) # ?, 5, k
+                
                 m_u_s = self._avg_on_real_neighbor(m_u_s, symp_3_hop)
 
                 # no m_u_u here because we dont have users embeddings
@@ -220,13 +253,14 @@ class HGNN(torch.nn.Module):
                 self.linear_usu_2_2(emb_u_2.mul(torch.unsqueeze(emb_s_1_,1)))
 
             m_s_u = self._avg_on_real_neighbor(m_s_u, user_2_hop) # ?, k
-            # m_s_u = self.dropout_fn(m_s_u)
+            m_s_u = self.dropout_fn(m_s_u)
 
             m_s_s = self.linear_usu_2_1(emb_s_1_) # ?, k
-            # m_s_s = self.dropout_fn(m_s_s)
+            m_s_s = self.dropout_fn(m_s_s)
 
+            # emb_ego_s = self.act_fn(self.linear_usu_cat(torch.cat([m_s_s, m_s_u], 1)))
             emb_ego_s = self.act_fn(m_s_s + m_s_u)
-            emb_ego_s = self.dropout_fn(emb_ego_s)
+            # emb_ego_s = self.dropout_fn(emb_ego_s)
             emb_ego_s = F.normalize(emb_ego_s, p=2, dim=1)
 
             emb_s_1_list.append(torch.unsqueeze(emb_ego_s,1))
@@ -234,12 +268,13 @@ class HGNN(torch.nn.Module):
         emb_s_1_last = torch.cat(emb_s_1_list, 1) # ?, 5, k
         symp_1_hop = data["usu_1"]
         m_u_s = self.linear_usu_1(emb_s_1_last)
+        
         m_u_s = self._avg_on_real_neighbor(m_u_s, symp_1_hop) # ?, k
 
         # no m_u_u because we dont have users' embeddings
         emb_u_last = self.act_fn(m_u_s)
-        emb_u_last = self.dropout_fn(emb_u_last)
-        emb_u_last = F.normalize(emb_u_last, p=2, dim=1)
+        # emb_u_last = self.dropout_fn(emb_u_last)
+        # emb_u_last = F.normalize(emb_u_last, p=2, dim=1)
 
         return emb_u_last
 
@@ -328,10 +363,20 @@ class HGNN(torch.nn.Module):
         """
         num_sample = len(label)
         neg_dise = np.random.randint(1, self.num_dise+1, num_sample)
-        same_idx = (label == neg_dise)
 
+        if self.mine_hard is True:
+            # mine hard example using hard map
+            num_hard = int(num_sample * self.hard_ratio)
+            all_idx = np.arange(num_sample)
+            np.random.shuffle(all_idx)
+            hard_idx = all_idx[:num_hard]
+            for idx in hard_idx:
+                neg_dise[idx] = np.random.choice(self.hard_neg_map[label[idx]])
+
+        # remove duplicate
+        same_idx = (label == neg_dise)
         if np.sum(same_idx) > 0:
-            rep_neg_dise = [self.hard_neg_map[x] for x in label[same_idx]]
+            rep_neg_dise = [self.hard_neg_map[x][0] for x in label[same_idx]]
             neg_dise[same_idx] = rep_neg_dise
 
         return neg_dise

@@ -145,10 +145,10 @@ def train(**kwargs):
             model_param["num_epoch"],total_loss))
 
         # do evaluation on recall and ndcg
-        metric_result, eval_log, eval_result  = evaluate_clf(model, val_data_loader, [3,5])
+        metric_result, eval_log, eval_result  = evaluate_clf(model, val_data_loader, [5])
         print("{} Epoch {}/{}: [Val] {}".format(now(),epoch+1, model_param["num_epoch"], eval_log))
 
-        early_stopper(metric_result["ndcg_5"], model)
+        early_stopper(metric_result["ndcg_5"], model, "textcnn")
 
         if early_stopper.early_stop:
             print("[Early Stop] {} Epoch {}/{}: {}".format(now(),epoch+1, model_param["num_epoch"], eval_log))
@@ -160,7 +160,7 @@ def train(**kwargs):
     test_data_loader = DataLoader(test_data, 
         model_param["batch_size"], shuffle=False, num_workers=0, collate_fn=collate_fn)
 
-    test_metric, test_log, test_result =  evaluate_clf(model, test_data_loader, top_k_list=[3,5])
+    test_metric, test_log, test_result =  evaluate_clf(model, test_data_loader, top_k_list=[1,3,5,10])
     print("[Test] {}: {}".format(now(), test_log))
     print("Training Done.")
 

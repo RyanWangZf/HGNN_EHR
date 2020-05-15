@@ -7,20 +7,8 @@ import pdb
 import torch
 import numpy as np
 
-from utils import read_symp2id
+from utils import read_symp2id, load_embedding
 
-def load_embedding(ckptpath="ckpt/GNN.pt"):
-    res = torch.load(ckptpath)
-    symp_emb = res["symp_embeds.weight"].cpu().numpy()
-    dise_emb = res["dise_embeds.weight"].cpu().numpy()
-    # need normalized
-    symp_norm = np.linalg.norm(symp_emb, 2, 1)
-    dise_norm = np.linalg.norm(dise_emb, 2, 1)
-
-    symp_emb[1:] = symp_emb[1:] * np.expand_dims(1/symp_norm[1:],1)
-    dise_emb[1:] = dise_emb[1:] * np.expand_dims(1/dise_norm[1:],1)
-
-    return symp_emb, dise_emb
 
 class EHR_retrieval:
     def __init__(self, prefix="./dataset/EHR", mode="sds"):

@@ -154,14 +154,40 @@ def parse_kwargs(param, kwargs):
     return param
 
 
-def load_ckpt(path, model):
-    ckpt = torch.load(path)
+def load_ckpt(path, model, use_gpu=True):
+    if use_gpu:
+        ckpt = torch.load(path)
+    else:
+        ckpt = torch.load(path, map_location=torch.device("cpu"))
+
     model.load_state_dict(ckpt)
     print("Load Checkpoint from", path)
     return
 
 
 def read_dise2id(prefix="./dataset/EHR"):
+    filename = os.path.join(prefix,"id2disease.txt")
+    f = open(filename, "r", encoding="utf-8")
+    data = f.readlines()
+    disease2id = {}
+    for i,line in enumerate(data):
+        # id_d, ds = line.split("\t")
+        ds = line.strip()
+        ds_list = ds.split("#")
+        for d in ds_list:
+            disease2id[d.strip()] = i
+
+    f.close()
+
+    # build id2disease
+    id2disease = {}
+    for k,v in disease2id.items():
+        id2disease[v] = k
+
+    return disease2id, id2disease
+
+
+def read_dise2id_deprecated(prefix="./dataset/EHR"):
     filename = os.path.join(prefix,"id2disease.txt")
     f = open(filename, "r", encoding="utf-8")
     data = f.readlines()
@@ -212,6 +238,20 @@ def parse_rank(pred_rank, id2dise):
 
     return pred_list
 
+def load_embedding(ckptpath="ckpt/gnn.pt", norm=True):
+    res = torch.load(ckptpath, map_location=torch.device("cpu"))
+    symp_emb = res["symp_embeds.weight"].cpu().numpy()
+    dise_emb = res["dise_embeds.weight"].cpu().numpy()
+
+    if norm:
+        # need normalized
+        symp_norm = np.linalg.norm(symp_emb, 2, 1)
+        dise_norm = np.linalg.norm(dise_emb, 2, 1)
+
+        symp_emb[1:] = symp_emb[1:] * np.expand_dims(1/symp_norm[1:],1)
+        dise_emb[1:] = dise_emb[1:] * np.expand_dims(1/dise_norm[1:],1)
+
+    return symp_emb, dise_emb
 
 def parse_query(query):
     """Given inputs queries, parse them to be

@@ -86,7 +86,6 @@ class EHR_load:
         self.symp2id = {}
         self.id2symp = defaultdict(list)
  
-
         data_path = os.path.join(prefix,"sampleNew_p_202005111638.xlsx")
         self.raw_df = pd.read_excel(data_path,encoding="utf-8")
         self.raw_df["dises"] = self.raw_df["3"].apply(lambda x: x.split("|"))
@@ -98,35 +97,56 @@ class EHR_load:
         for i in range(len(self.raw_df)):
             line = self.raw_df.iloc[i]
             num_result = line["num_result"]
+
             try:
-                symps = num_result.split("@@")
+                kw_list = self.get_keywords_raw(line["8"])
             except:
-                print("[Warning] Cannot process symptoms {} at line {}".format(num_result, i))
+                print("[Warning] Cannot process symptoms {} at line {}".format(line["8"], i))
+
+            kw_list = list(set(kw_list))
+
+            # *******************************
+            # The following executes the standardization system
+            # try:
+            #     symps = num_result.split("@@")
+            # except:
+            #     print("[Warning] Cannot process symptoms {} at line {}".format(num_result, i))
+            #     continue
+
+            # up_symp2id = {}
+            # symp_ids = []
+            # for symp in symps:
+            #     idx, sym = symp.split(",")
+            #     sym = self.regex_dp.sub("",sym).strip()
+            #     idx = re.findall("[0-9]+",idx)[0]
+            #     up_symp2id[sym] = idx
+            #     self.id2symp[idx].append(sym)
+            #     symp_ids.append(idx)
+
+            # self.symp2id.update(up_symp2id)
+
+            # # do symptom standardization
+            # uq_symp_ids = list(set(symp_ids))
+            # kw_list = [self.id2symp[u][0] for u in uq_symp_ids]
+            # *******************************
+
+            # for ds in line["dises"]:
+            #     diseid = self.dise2id.get(ds)
+            #     if diseid is None:
+            #         continue
+            #     wrt_line = str(uid) + "\t" + str(diseid) + "\t" + "\t".join(kw_list) + "\n"
+            #     f_out.write(wrt_line)
+            #     uid += 1
+
+            # only select one disease
+            uid = line[0]
+            ds = line["dises"][0]
+            diseid = self.dise2id.get(ds)
+            if diseid is None:
                 continue
-
-            up_symp2id = {}
-            symp_ids = []
-            for symp in symps:
-                idx, sym = symp.split(",")
-                sym = self.regex_dp.sub("",sym).strip()
-                idx = re.findall("[0-9]+",idx)[0]
-                up_symp2id[sym] = idx
-                self.id2symp[idx].append(sym)
-                symp_ids.append(idx)
-
-            self.symp2id.update(up_symp2id)
-
-            # do symptom standardization
-            uq_symp_ids = list(set(symp_ids))
-            kw_list = [self.id2symp[u][0] for u in uq_symp_ids]
-
-            for ds in line["dises"]:
-                diseid = self.dise2id.get(ds)
-                if diseid is None:
-                    continue
-                wrt_line = str(uid) + "\t" + str(diseid) + "\t" + "\t".join(kw_list) + "\n"
-                f_out.write(wrt_line)
-                uid += 1
+            wrt_line = str(uid) + "\t" + str(diseid) + "\t" + "\t".join(kw_list) + "\n"
+            f_out.write(wrt_line)
+            # uid += 1
 
         f_out.close()
         print("Pre-processing done.")
@@ -148,8 +168,8 @@ class EHR_load:
         all_idx = np.arange(len(all_lines))
         np.random.shuffle(all_idx)
 
-        num_tr_sample = int(len(all_idx) * 0.6)
-        num_va_sample = int(len(all_idx) * 0.2)
+        num_tr_sample = int(len(all_idx) * 0.8)
+        num_va_sample = int(len(all_idx) * 0.1)
 
         tr_idx = all_idx[:num_tr_sample]
         va_idx = all_idx[num_tr_sample:num_tr_sample+num_va_sample]
@@ -283,7 +303,7 @@ class EHR_load:
         # hyper parameter setup
 
         "for metapath DSD"
-        num_DSD_1_hop = 10
+        num_DSD_1_hop = 20
         num_DSD_2_hop = 5
 
         "for metapath USU"
@@ -410,6 +430,16 @@ class EHR_load:
 
         return dic
 
+    def get_keywords_raw(self, raw_symp):
+        raw_kw_list = self.regex_split.sub("##", raw_symp).strip().split("##")
+
+        kw_list = []
+        for x in raw_kw_list:
+            kw = self.regex_eng.sub("",x)
+            if len(kw) > 0:
+                kw_list.append(kw)
+        return kw_list
+
     def unique_dict(self, dic):
         for k in dic.keys():
             values = dic[k]
@@ -447,8 +477,8 @@ def read_disease2id(prefix="EHR"):
 
 if __name__ == '__main__':
     ehr = EHR_load(prefix = "EHR")
-    # ehr.pre_processing()
-    # ehr.split()
+    ehr.pre_processing()
+    ehr.split()
     ehr.post_processing("train")
     ehr.post_processing("test")
     ehr.post_processing("val")

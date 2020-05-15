@@ -129,5 +129,8 @@ dmypy.json
 .pyre/
 
 dataset/EHR/
+dataset/EHR_deprecated/
+*.xlsx
+*.npy
 *.csv
 ckpt/*
