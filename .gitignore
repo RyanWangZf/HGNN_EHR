@@ -133,4 +133,5 @@ dataset/EHR_deprecated/
 *.xlsx
 *.npy
 *.csv
+*.txt
 ckpt/*
