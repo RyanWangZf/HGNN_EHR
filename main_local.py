@@ -15,6 +15,8 @@ from utils import setup_seed, collate_fn
 
 from config import default_config
 
+from utils import evaluate
+
 class HGNN_local(torch.nn.Module):
     def __init__(self, *args, **kwargs):
         super(HGNN_local, self).__init__()

@@ -136,7 +136,7 @@ def main(**kwargs):
         # print("true did:", did)
         # print("before:", pred_rank)
         before_list.append(pred_rank[0])
-
+                
         rank_symp = ehr_ret(symp_idx=init_symp, top_k=param["top_k"])
         after_symp_list.append([id2symp[str(t)] for t in rank_symp])
         symp_ar = [np.concatenate([[init_symp], rank_symp], 0)]
