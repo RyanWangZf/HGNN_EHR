@@ -1,4 +1,4 @@
-"""python vie_retrieval_result.py main
+"""python vie_retrieval_result.py main --mode="gpmi"
 """
 import os
 import pdb
@@ -15,7 +15,6 @@ from config import default_config
 from model import HGNN, DSD_sampler, USU_sampler
 from dataset import ehr
 from utils import load_ckpt, parse_kwargs, parse_data_model
-
 
 def calculate_rec_ndcg(pred_top_k, target, top_k, result_map):
     rank_rel = np.array(pred_top_k == int(target)).astype(float)
@@ -136,7 +135,7 @@ def main(**kwargs):
         # print("true did:", did)
         # print("before:", pred_rank)
         before_list.append(pred_rank[0])
-                
+
         rank_symp = ehr_ret(symp_idx=init_symp, top_k=param["top_k"])
         after_symp_list.append([id2symp[str(t)] for t in rank_symp])
         symp_ar = [np.concatenate([[init_symp], rank_symp], 0)]

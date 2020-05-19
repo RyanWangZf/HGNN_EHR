@@ -118,7 +118,6 @@ class EHR_retrieval:
             ranks = self.GPMI_sampling(int(symp_idx), top_k)
             return ranks
 
-
     def SDS_sampling(self, symp_idx):
         # 1st-hop
         dise_1_hop = self.symp2dise[str(symp_idx)]
