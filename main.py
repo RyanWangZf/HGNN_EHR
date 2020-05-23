@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+"""python -u main.py train --num_epoch=50 --lr=0.01 --batch_size=1024 --hard_ratio=0 --weight_decay=1e-4 --use_gpu=False --w2v="./ckpt/w2v"
+"""
 import time
 import torch
 import numpy as np
@@ -24,17 +26,19 @@ def train(**kwargs):
     model_param = default_config()
     model_param = parse_kwargs(model_param, kwargs)
 
+    dataset_name = model_param["dataset"]
+
     # load hard maps
     if model_param["hard_ratio"] > 0:
         model_param["hard_map"] = np.load("dataset/hard_dise.npy", allow_pickle=True).item()
     
     # load training data
-    train_data = ehr.EHR("dataset/EHR","train")
+    train_data = ehr.EHR("dataset/{}".format(dataset_name),"train")
     train_data_loader = DataLoader(train_data, 
         model_param["batch_size"], shuffle=True, num_workers=0, collate_fn=collate_fn)
 
     # load validation data
-    val_data = ehr.EHR("dataset/EHR","val")
+    val_data = ehr.EHR("dataset/{}".format(dataset_name),"val")
     val_data_loader = DataLoader(val_data, 
         model_param["batch_size"], shuffle=False, num_workers=0, collate_fn=collate_fn)
 
@@ -45,6 +49,10 @@ def train(**kwargs):
 
     # init model
     gnn = HGNN(**model_param)
+    if kwargs["w2v"] is not None:
+        # load w2v data
+        gnn.load_symp_embed(kwargs["w2v"])
+
     early_stopper = EarlyStopping(patience=model_param["early_stop"], larger_better=True)
 
     if use_gpu:
@@ -56,9 +64,8 @@ def train(**kwargs):
 
     optimizer = torch.optim.Adam(gnn.parameters(),lr=model_param["lr"], weight_decay=0)
 
-
     # init sampler for netative sampling during training.
-    dsd_sampler = DSD_sampler("dataset/EHR")
+    dsd_sampler = DSD_sampler("dataset/{}".format(dataset_name))
     print("D-S-D Sampler Inited.")
 
     for epoch in range(model_param["num_epoch"]):
@@ -98,7 +105,7 @@ def train(**kwargs):
 
     # eval on test set
     # load test data
-    test_data = ehr.EHR("dataset/EHR","test")
+    test_data = ehr.EHR("dataset/{}".format(dataset_name),"test")
     test_data_loader = DataLoader(test_data, 
         model_param["batch_size"], shuffle=False, num_workers=0, collate_fn=collate_fn)
 

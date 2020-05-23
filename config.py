@@ -15,6 +15,8 @@ def default_config():
             "early_stop":5,
             "hard_ratio":0.2,
             "use_gpu":True,
+            "dataset":"EHR",
+            "w2v":None,
         }
 
     return model_param

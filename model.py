@@ -22,6 +22,7 @@ class HGNN(torch.nn.Module):
         # now we make embedding dim same !!
         assert kwargs["symp_embedding_dim"] == kwargs["dise_embedding_dim"]
         embed_dim = kwargs["symp_embedding_dim"]
+        self.embed_dim = embed_dim
         for l in layer_size_usu:
             assert l == embed_dim
         for l in layer_size_dsd:
@@ -325,6 +326,25 @@ class HGNN(torch.nn.Module):
         pred_rank_top_k = torch.argsort(-pred_score,1)[:,:top_k] + 1
 
         return pred_rank_top_k.detach().cpu().numpy()
+
+    def load_symp_embed(self, w2v_path="./ckpt/w2v"):
+        """Load pretrained symptom embeddings from Word2Vec model.
+        """
+        from gensim.models import Word2Vec
+        embed_dim = self.embed_dim
+
+        w2v_model = Word2Vec.load(w2v_path)
+        # init embedding matrix
+        w2v_list = [[0]*embed_dim]
+        for i in range(1,self.num_symp+1):
+            w2v_list.append(w2v_model.wv[str(i)])
+
+        w2v_param = torch.FloatTensor(w2v_list)
+        self.symp_embeds.weight.data.copy_(w2v_param)
+        # freeze the symptom embeddings
+        self.symp_embeds.requires_grad = False
+        print("Load pretrained symptom embeddings from", w2v_path)
+
 
     def _array2dict(self, feat):
         """Transform a batch of tuples to a
