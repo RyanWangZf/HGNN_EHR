@@ -165,7 +165,7 @@ def main(**kwargs):
     print("[after]: {}".format(af_log))
 
     # to result csv
-    fout = open("retrieval_result.txt","w", encoding="utf-8")
+    fout = open("retrieval_result_{}.txt".format(param["mode"]),"w", encoding="utf-8")
     fout.write("did\tbefore_pred\tafter_pred\tinit_symp\taftersymp\n")
     for i in range(len(init_symp_list)):
         wrtline = id2dise[int(real_dise_list[i])] + "\t" + id2dise[int(before_list[i][0])] + "\t" + id2dise[int(after_list[i][0])] + "\t" + init_symp_list[i] +"\t" + "#".join(after_symp_list[i]) + "\n"
@@ -174,8 +174,8 @@ def main(**kwargs):
     fin.close()
     fout.close()
 
-    df_res = pd.read_table("retrieval_result.txt")
-    df_res.to_excel("retrieval_result.xlsx", encoding="utf-8")
+    df_res = pd.read_table("retrieval_result_{}.txt".format(param["mode"]))
+    df_res.to_excel("retrieval_result_{}.xlsx".format(param["mode"]), encoding="utf-8")
     print("Done")
 
 if __name__ == '__main__':
