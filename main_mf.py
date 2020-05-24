@@ -165,7 +165,7 @@ def train(**kwargs):
         model.cuda()
 
     print("Model Inited.")
-    optimizer = torch.optim.Adam(model.parameters(),lr=model_param["lr"],weight_decay=0)
+    optimizer = torch.optim.Adam(model.parameters(),lr=model_param["lr"],weight_decay=kwargs["weight_decay"])
 
 
     for epoch in range(model_param["num_epoch"]):
