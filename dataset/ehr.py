@@ -261,9 +261,7 @@ class EHR_load:
             f_out_va.write(wrt_line)
             num_va += 1
 
-
         f_out_va.close()
-
 
         num_te = 0
         for idx in te_idx:
@@ -298,7 +296,7 @@ class EHR_load:
         print("# Tr:{}, # Va: {} # Te:{}".format(num_tr, num_va, num_te))
         print("# Symptoms Used:", len(self.symp2id.keys()))
 
-    def post_processing(self, mode="train"):
+    def post_processing(self, mode="train", use_pmi=True):
         # ---------------
         # hyper parameter setup
 
@@ -326,6 +324,37 @@ class EHR_load:
         self.user2symp = np.load(os.path.join(prefix,"user2symp.npy"),allow_pickle=True).item()
         self.symp2dise = np.load(os.path.join(prefix,"symp2dise.npy"),allow_pickle=True).item()
 
+
+        if use_pmi:
+            from scipy import sparse
+            self.pmi_ss_path = os.path.join(prefix, "pmi_ss_mat.npz")
+            self.pmi_sd_path = os.path.join(prefix, "pmi_sd_mat.npz")
+            self.symp2dise_pmi = sparse.load_npz(self.pmi_sd_path)
+            # build pmi_ds_mat
+            self.dise2symp_pmi = sparse.csr_matrix(self.symp2dise_pmi.T.todense())
+            self.symp_count_path = os.path.join(prefix, "sympcount.npy")
+            self.dise_count_path = os.path.join(prefix, "disecount.npy")
+            self.disecount = np.load(self.dise_count_path, allow_pickle=True).item()
+            self.sympcount = np.load(self.symp_count_path, allow_pickle=True).item()
+            c_ar, i_ar = [], []
+            for k,v in self.sympcount.items():
+                c_ar.append(v)
+                i_ar.append(int(k))
+            sympcount_mat = sparse.csr_matrix((c_ar, (i_ar, [0]*len(i_ar))))
+            self.sympcount_ar = sympcount_mat.toarray().flatten()
+            self.num_all_symp = self.sympcount_ar.sum()
+
+            # build dise count array
+            c_ar, i_ar = [], []
+            for k,v in self.disecount.items():
+                c_ar.append(v)
+                i_ar.append(int(k))
+            disecount_mat = sparse.csr_matrix((c_ar, (i_ar, [0]*len(i_ar))))
+            self.disecount_ar = disecount_mat.toarray().flatten()
+            self.num_all_dise = self.disecount_ar.sum()
+            self.dise2symp_s_neighbor = {}
+
+
         print("start sampling neighborhood :", mode)
 
         # build maps
@@ -341,7 +370,28 @@ class EHR_load:
             symp_list = symp_ar[l]
 
             dsd_1_hop_nb = self.dise2symp[str(dise)]
-            dsd_1_hop_nb = self.random_select(dsd_1_hop_nb, num_DSD_1_hop)
+            if use_pmi:
+                if self.dise2symp_s_neighbor.get(dise) is None:
+                    ds_scores = self.dise2symp_pmi[dise]
+                    ds_score_vals = ds_scores.data
+                    ds_score_inds = ds_scores.indices
+                    p_dise = self.disecount_ar[dise] / self.num_all_dise
+                    p_symp = self.sympcount_ar[ds_score_inds] / self.num_all_symp
+                    pmi_ds = np.log2((1e-8 + ds_score_vals/self.num_all_dise)/(1e-8 + p_dise * p_symp))
+                    Z = - np.log2((ds_score_vals +1e-8)/(1e-8+ self.num_all_dise))
+                    npmi_ds = pmi_ds / Z
+                    sort_idx = np.argsort(-npmi_ds)
+                    dsd_1_hop_nb = ds_score_inds[sort_idx][:100]
+                    self.dise2symp_s_neighbor[dise] = dsd_1_hop_nb
+                else:
+                    dsd_1_hop_nb = self.dise2symp_s_neighbor[dise]
+
+                dsd_1_hop_nb = self.random_select(dsd_1_hop_nb, num_DSD_1_hop)
+
+            else:
+                # random sampling
+                dsd_1_hop_nb = self.random_select(dsd_1_hop_nb, num_DSD_1_hop)
+
             dsd_1_hop_nb = self.fill_zero(dsd_1_hop_nb, num_DSD_1_hop)
 
             data_dict["dsd_1"].append(dsd_1_hop_nb)
@@ -401,6 +451,10 @@ class EHR_load:
         np.save(os.path.join(data_prefix,"data.npy"), data_dict)
         np.save(os.path.join(data_prefix,"label.npy"), dise_ar)
 
+        if use_pmi:
+            dise2symp_s_neighbor_path = os.path.join(prefix,"dise2symp_s_n.npy")
+            np.save(dise2symp_s_neighbor_path, self.dise2symp_s_neighbor)
+
         print("Done :", mode)
 
     def read_data(self, path):
@@ -459,6 +513,58 @@ class EHR_load:
         np.random.shuffle(all_idx)
         return ar[all_idx[:target_num]]
 
+    def build_pmi_matrix(self, prefix="EHR"):
+        from scipy import sparse
+        # get num_symp
+        self.symp2dise_dict = np.load(os.path.join(prefix,"symp2dise.npy"),allow_pickle=True).item()
+        self.num_symp = len(self.symp2dise_dict.keys())
+
+        symp2symp = defaultdict(list)
+        symp2dise = defaultdict(list)
+        symp2count = defaultdict(int)
+        dise2count = defaultdict(int)
+
+        self.pmi_ss_path = os.path.join(prefix, "pmi_ss_mat.npz")
+        self.pmi_sd_path = os.path.join(prefix, "pmi_sd_mat.npz")
+        self.symp_count_path = os.path.join(prefix, "sympcount.npy")
+        self.dise_count_path = os.path.join(prefix, "disecount.npy")
+        self.dise2symp_path = os.path.join(prefix, "dise2symp.npy")
+
+        pmi_datapath = os.path.join(prefix, "train/data.txt")
+        fin = open(pmi_datapath, "r", encoding="utf-8")
+        for line in fin.readlines():
+            line_data = line.strip().split("\t")
+            diseid = line_data[1]
+            symps = line_data[2:]
+            dise2count[diseid] += 1
+            for symp in symps:
+                symp2symp[symp].extend(symps)
+                symp2count[symp] += 1
+                symp2dise[symp].append(diseid)
+
+        self.sympcount = symp2count
+        csr_data, csr_col, csr_row = [],[],[]
+        csr_sd_data, csr_sd_col, csr_sd_row = [],[],[]
+        for symp in range(1,self.num_symp):
+            coc_count = pd.value_counts(symp2symp[str(symp)])
+            csr_data.extend(coc_count.values.tolist())
+            csr_row.extend([symp]*len(coc_count))
+            csr_col.extend(coc_count.index.values.astype(int).tolist())
+
+            coc_sd_count = pd.value_counts(symp2dise[str(symp)])
+            csr_sd_data.extend(coc_sd_count.values.tolist())
+            csr_sd_row.extend([symp]*len(coc_sd_count))
+            csr_sd_col.extend(coc_sd_count.index.values.astype(int).tolist())
+
+        self.symp2symp = sparse.csr_matrix((csr_data,(csr_row,csr_col)))
+        self.symp2dise = sparse.csr_matrix((csr_sd_data, (csr_sd_row, csr_sd_col)))
+        self.disecount = dise2count
+        sparse.save_npz(self.pmi_ss_path, self.symp2symp)
+        sparse.save_npz(self.pmi_sd_path, self.symp2dise)
+        np.save(self.symp_count_path ,self.sympcount)
+        np.save(self.dise_count_path, self.disecount)
+        print("Done PMI Mat Building.")
+
 
 def read_disease2id(prefix="EHR"):
     filename = os.path.join(prefix,"id2disease.txt")
@@ -479,6 +585,7 @@ if __name__ == '__main__':
     ehr = EHR_load(prefix = "EHR")
     ehr.pre_processing()
     ehr.split()
+    ehr.build_pmi_matrix("EHR")
     ehr.post_processing("train")
     ehr.post_processing("test")
     ehr.post_processing("val")

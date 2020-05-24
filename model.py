@@ -242,8 +242,8 @@ class HGNN(torch.nn.Module):
 
                 # no m_u_u here because we dont have users embeddings
                 m_u_s = self.act_fn(m_u_s) # ?, k
-                m_u_s = self.dropout_fn(m_u_s)
-                emb_u_2_ = F.normalize(m_u_s, p=2, dim=1)
+                emb_u_2_ = self.dropout_fn(m_u_s)
+                emb_u_2_ = F.normalize(emb_u_2_, p=2, dim=1)
 
                 emb_u_2_list.append(torch.unsqueeze(emb_u_2_, 1))
 
@@ -483,16 +483,18 @@ class USU_sampler:
         np.random.shuffle(all_idx)
         return ar[all_idx[:target_num]]
 
-
-
 class DSD_sampler:
     """Given targeted array of diseases,
     sampling their neighborhood based D-S-D path.
     """
-    def __init__(self, prefix):
+    def __init__(self, prefix, use_pmi=True):
         self.prefix = prefix
         # load maps
-        self.dise2symp = np.load(os.path.join(prefix,"dise2symp.npy"),allow_pickle=True).item()
+        if use_pmi:
+            self.dise2symp = np.load(os.path.join(prefix,"dise2symp_s_n.npy"),allow_pickle=True).item()
+        else:
+            self.dise2symp = np.load(os.path.join(prefix,"dise2symp.npy"),allow_pickle=True).item()
+
         self.symp2dise = np.load(os.path.join(prefix,"symp2dise.npy"),allow_pickle=True).item()
         self.num_dise = len(self.dise2symp.keys())
         self.num_symp = len(self.symp2dise.keys())
