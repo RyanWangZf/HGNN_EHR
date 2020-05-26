@@ -251,7 +251,7 @@ class EHR_retrieval:
         self.sympcount = symp2count
         csr_data, csr_col, csr_row = [],[],[]
         csr_sd_data, csr_sd_col, csr_sd_row = [],[],[]
-        for symp in range(1,self.num_symp):
+        for symp in range(1,self.num_symp+1):
             coc_count = pd.value_counts(symp2symp[str(symp)])
             csr_data.extend(coc_count.values.tolist())
             csr_row.extend([symp]*len(coc_count))

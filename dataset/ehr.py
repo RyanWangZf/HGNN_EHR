@@ -545,7 +545,7 @@ class EHR_load:
         self.sympcount = symp2count
         csr_data, csr_col, csr_row = [],[],[]
         csr_sd_data, csr_sd_col, csr_sd_row = [],[],[]
-        for symp in range(1,self.num_symp):
+        for symp in range(1,self.num_symp+1):
             coc_count = pd.value_counts(symp2symp[str(symp)])
             csr_data.extend(coc_count.values.tolist())
             csr_row.extend([symp]*len(coc_count))
@@ -583,9 +583,9 @@ def read_disease2id(prefix="EHR"):
 
 if __name__ == '__main__':
     ehr = EHR_load(prefix = "EHR")
-    ehr.pre_processing()
-    ehr.split()
+    # ehr.pre_processing()
+    # ehr.split()
     ehr.build_pmi_matrix("EHR")
-    ehr.post_processing("train")
-    ehr.post_processing("test")
-    ehr.post_processing("val")
+    # ehr.post_processing("train")
+    # ehr.post_processing("test")
+    # ehr.post_processing("val")
