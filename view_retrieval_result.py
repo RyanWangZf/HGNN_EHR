@@ -1,4 +1,4 @@
-"""python vie_retrieval_result.py main --mode="gpmi"
+"""python view_retrieval_result.py main --mode="gpmi"
 """
 import os
 import pdb
@@ -57,7 +57,7 @@ def main(**kwargs):
     param.update(
         {"mode":"sds",
         "top_k":10,
-        "ckpt": "ckpt/GNN.pt",
+        "ckpt": "ckpt/gnn.pt",
         "use_gpu":False
         })
 

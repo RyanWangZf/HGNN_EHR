@@ -51,7 +51,7 @@ def train(**kwargs):
     test_feat, test_label = test_data.get_feat_data()
 
     test_metric, test_log, test_result =  evaluate_clf(model, 
-        test_feat, test_label,top_k_list=[3,5])
+        test_feat, test_label,top_k_list=[3,5,10])
 
     print("[Test] {}: {}".format(now(), test_log))
     print("Training Done.")

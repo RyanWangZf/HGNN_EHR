@@ -491,7 +491,11 @@ class DSD_sampler:
         self.prefix = prefix
         # load maps
         if use_pmi:
-            self.dise2symp = np.load(os.path.join(prefix,"dise2symp_s_n.npy"),allow_pickle=True).item()
+            dise2symp = np.load(os.path.join(prefix,"dise2symp_s_n.npy"),allow_pickle=True).item()
+            self.dise2symp = {}
+            for k in dise2symp.keys():
+                self.dise2symp[str(k)] = dise2symp[k]
+                
         else:
             self.dise2symp = np.load(os.path.join(prefix,"dise2symp.npy"),allow_pickle=True).item()
 

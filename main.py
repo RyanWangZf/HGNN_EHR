@@ -50,8 +50,22 @@ def train(**kwargs):
     # init model
     gnn = HGNN(**model_param)
     if kwargs["w2v"] is not None:
-        # load w2v data
-        gnn.load_symp_embed(kwargs["w2v"])
+        if os.path.exists(kwargs["w2v"]):
+            # load w2v data
+            gnn.load_symp_embed(kwargs["w2v"])
+        else:
+            from gensim.models import Word2Vec
+            # build word2vec embeddings
+            filename = "./dataset/EHR/train/data.txt"
+            fin = open(filename, "r")
+            corpus = []
+            for line in fin.readlines():
+                corpus.append(line.strip().split()[2:])
+            # learn word2vec model
+            start_time = time.time()
+            w2v_model = Word2Vec(corpus, size=64, window=3, min_count=1, workers=4, sg=1)
+            w2v_model.save("./ckpt/w2v")
+            print("word2vec training done, costs {} secs.".format(time.time()-start_time))
 
     early_stopper = EarlyStopping(patience=model_param["early_stop"], larger_better=True)
 

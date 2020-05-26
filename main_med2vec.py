@@ -25,7 +25,10 @@ class MLP(torch.nn.Module):
         self.num_dise = kwargs["num_dise"]
         self.use_gpu = kwargs["use_gpu"]
         embed_dim = kwargs["symp_embedding_dim"]
-        self.linear = torch.nn.Linear(embed_dim, self.num_dise)
+        self.linear_1 = torch.nn.Linear(embed_dim, 64, bias=False)
+        self.linear_2 = torch.nn.Linear(64, 64, bias=False)
+        self.linear_3 = torch.nn.Linear(64, self.num_dise, bias=False)
+        # self.linear = torch.nn.Linear(embed_dim, self.num_dise)
         # init embeddings
         self.symp_embeds = torch.nn.Embedding(
             self.num_symp+1,
@@ -50,7 +53,11 @@ class MLP(torch.nn.Module):
         weight = 1 / (real_num_neighbor+1e-8)
         weight[weight >= 1e8] = 0
         emb_user = emb_symp.sum(1).mul(weight)
-        pred = self.linear(emb_user)
+        
+        h = self.linear_1(emb_user)
+        h = self.linear_2(h)
+        pred = self.linear_3(h)
+        # pred = self.linear(emb_user)
         return pred
 
     def _array2dict(self, feat):
@@ -128,7 +135,7 @@ def train(**kwargs):
         model.cuda()
 
     print("Model Inited.")
-    optimizer = torch.optim.Adam(model.parameters(),lr=model_param["lr"],weight_decay=0)
+    optimizer = torch.optim.Adam(model.parameters(),lr=model_param["lr"],weight_decay=kwargs["weight_decay"])
 
     for epoch in range(model_param["num_epoch"]):
         total_loss = 0

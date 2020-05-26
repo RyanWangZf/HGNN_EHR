@@ -47,7 +47,9 @@ class EHR_retrieval:
             if os.path.exists(self.pmi_ss_path):
                 print("Load PMI Mat from", self.pmi_ss_path)
                 self.symp2symp = sparse.load_npz(self.pmi_ss_path)
-                self.symp2dise = sparse.load_npz(self.pmi_sd_path)
+                # self.symp2dise = sparse.load_npz(self.pmi_sd_path)
+                self.symp2dise = np.load(os.path.join(prefix,"symp2dise.npy"),allow_pickle=True).item()
+
                 self.sympcount = np.load(self.symp_count_path, allow_pickle=True).item()
                 self.disecount = np.load(self.dise_count_path, allow_pickle=True).item()
                 self.symp2symp.setdiag(0)
@@ -83,6 +85,7 @@ class EHR_retrieval:
         
         symp_emb = self.symp_embs[int(symp_idx)]
         norm_symp_emb = symp_emb / np.linalg.norm(symp_emb, 2)
+        self.symp_emb = norm_symp_emb
 
         if self.mode == "sds":
             symps_2_hop = self.SDS_sampling(symp_idx)
@@ -168,11 +171,15 @@ class EHR_retrieval:
         """Sampling through the graphical PMI method, based on S - D - S meta-path.
         """
         # find S - D scores
-        sd_scores = self.symp2dise[symp_idx]
-        sd_score_vals = sd_scores.data
-        sd_score_inds = sd_scores.indices
+        # using the pmi between s and d
+        # sd_scores = self.symp2dise[symp_idx]
+        # sd_score_vals = sd_scores.data
+        # sd_score_inds = sd_scores.indices
 
-        if len(sd_score_vals) <= 1:
+        # using cosing sim between s and d
+        sd_score_inds = self.symp2dise[str(symp_idx)].astype(int)
+
+        if len(sd_score_inds) <= 1:
             # only one disease is connected to this symptom
             # directly retrieve symptoms under this disease
             sub_symps = self.dise2symp[str(sd_score_inds[0])].astype(int)
@@ -187,14 +194,20 @@ class EHR_retrieval:
             sort_sub_symps = sub_symps[sort_idx]
             return sort_sub_symps[:top_k]
 
-        else:  
-            p_dise = self.disecount_ar[sd_score_inds] / self.num_all_dise
-            p_symp = self.sympcount_ar[symp_idx] / self.num_all_symp
-            pmi_sd = np.log2((1e-8 + sd_score_vals/self.num_all_dise)/(1e-8 + p_dise * p_symp))
-            Z = - np.log2((sd_score_vals +1e-8)/(1e-8+ self.num_all_dise))
-            npmi_sd = pmi_sd / Z
-            # select symps according to npmi sd
-            target_num = np.ceil(top_k * softmax(npmi_sd)).astype(int)
+        else: 
+            # using pmi between s and d
+            # p_dise = self.disecount_ar[sd_score_inds] / self.num_all_dise
+            # p_symp = self.sympcount_ar[symp_idx] / self.num_all_symp
+            # pmi_sd = np.log2((1e-8 + sd_score_vals/self.num_all_dise)/(1e-8 + p_dise * p_symp))
+            # Z = - np.log2((sd_score_vals +1e-8)/(1e-8+ self.num_all_dise))
+            # npmi_sd = pmi_sd / Z
+            # target_num = np.ceil(top_k * softmax(npmi_sd)).astype(int)
+
+            # using sim between s and d
+            dise_embs = self.dise_embs[sd_score_inds]
+            symp_emb = self.symp_emb
+            sd_score = np.sum(symp_emb * dise_embs,1)
+            target_num = np.ceil(top_k * softmax(sd_score)).astype(int)
 
             alternative_symp_list = []
             for j, dise in enumerate(sd_score_inds):
