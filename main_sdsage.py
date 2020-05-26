@@ -242,10 +242,10 @@ def train(**kwargs):
     print("Pos / Hard symptom map Inited.")
 
     optimizer = torch.optim.Adam(gnn.parameters(),lr=model_param["lr"], weight_decay=model_param["lr"])
+    last_total_loss = 1e10
 
     for epoch in range(model_param["num_epoch"]):
         total_loss = 0
-        last_total_loss = -1e10
         gnn.train()
         np.random.shuffle(all_symp_index)
 
@@ -291,14 +291,10 @@ def train(**kwargs):
             # create loss
             scores = symp_emb.mul(pos_emb).sum(1) - symp_emb.mul(neg_emb).sum(1) + 1.0
             scores[scores < 0] = 0
-
             loss = scores.mean()
-
             optimizer.zero_grad()
             loss.backward()
-
             optimizer.step()
-
             total_loss += loss.item()
 
         print("{} Epoch {}/{}: train loss: {:.6f}".format(now(),epoch+1,
@@ -306,6 +302,7 @@ def train(**kwargs):
 
         if total_loss - last_total_loss > 0:
             print("Loss stops to decrease, converge.")
+            break
 
         last_total_loss = total_loss
 
